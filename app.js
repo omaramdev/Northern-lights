@@ -148,7 +148,8 @@
         loading: true,
         locationError: null,
         locationMode: 'gps', // 'gps' or 'address'
-        addressName: null     // display name when using address mode
+        addressName: null,    // display name when using address mode
+        pendingGeo: null      // selected autocomplete result awaiting loadData
     };
 
     // ============================================================
@@ -256,38 +257,60 @@
     }
 
     // ============================================================
-    // GEOCODING (Open-Meteo — free, no API key)
+    // GEOCODING (Nominatim / OpenStreetMap — free, no API key)
+    // Supports addresses, place names, and business names
     // ============================================================
 
-    async function geocodeAddress(query) {
+    async function geocodeSearch(query) {
+        // Returns array of results for autocomplete
         try {
-            var url = 'https://geocoding-api.open-meteo.com/v1/search'
-                + '?name=' + encodeURIComponent(query)
-                + '&count=5'
-                + '&language=en'
-                + '&format=json';
+            var url = 'https://nominatim.openstreetmap.org/search'
+                + '?q=' + encodeURIComponent(query)
+                + '&format=jsonv2'
+                + '&limit=5'
+                + '&countrycodes=is'
+                + '&addressdetails=1'
+                + '&accept-language=en';
 
-            var res = await fetch(url);
-            if (!res.ok) return null;
+            var res = await fetch(url, {
+                headers: { 'User-Agent': 'NorthernLightsFinder/1.0' }
+            });
+            if (!res.ok) return [];
             var data = await res.json();
 
-            if (data.results && data.results.length > 0) {
-                // Prefer results in Iceland, otherwise take the first
-                var icelandResult = data.results.find(function (r) {
-                    return r.country_code === 'IS';
-                });
-                var result = icelandResult || data.results[0];
+            return data.map(function (r) {
                 return {
-                    lat: result.latitude,
-                    lng: result.longitude,
-                    name: result.name + (result.admin1 ? ', ' + result.admin1 : '')
-                        + (result.country ? ', ' + result.country : '')
+                    lat: parseFloat(r.lat),
+                    lng: parseFloat(r.lon),
+                    name: r.display_name,
+                    shortName: buildShortName(r)
                 };
-            }
+            });
         } catch (e) {
             console.warn('Geocoding error:', e);
         }
-        return null;
+        return [];
+    }
+
+    function buildShortName(r) {
+        // Build a concise display name from Nominatim result
+        var parts = [];
+        if (r.name && r.name !== r.address.road) parts.push(r.name);
+        if (r.address) {
+            if (r.address.road) parts.push(r.address.road);
+            if (r.address.town) parts.push(r.address.town);
+            else if (r.address.village) parts.push(r.address.village);
+            else if (r.address.city) parts.push(r.address.city);
+        }
+        if (parts.length === 0) return r.display_name.split(',').slice(0, 2).join(',');
+        return parts.join(', ');
+    }
+
+    // Debounce helper for autocomplete
+    var searchTimer = null;
+    function debounceSearch(fn, delay) {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(fn, delay);
     }
 
     // ============================================================
@@ -979,17 +1002,26 @@
                 showError('Please enter an address or place name.', false);
                 return;
             }
-            showLoading('Looking up "' + query + '"...');
-            var geo = await geocodeAddress(query);
-            if (!geo) {
-                refreshBtn.classList.remove('spinning');
-                document.getElementById('location-status').innerHTML = '<span class="loc-error">Could not find that location. Try a different search.</span>';
-                showError('Could not find "' + query + '". Try a town name like Akureyri or Vik.', false);
-                return;
+            // If user already picked an autocomplete result, use the stored coords
+            if (appState.pendingGeo) {
+                appState.userLat = appState.pendingGeo.lat;
+                appState.userLng = appState.pendingGeo.lng;
+                appState.addressName = appState.pendingGeo.shortName || appState.pendingGeo.name;
+                appState.pendingGeo = null;
+            } else {
+                showLoading('Looking up "' + query + '"...');
+                var results = await geocodeSearch(query);
+                if (!results || results.length === 0) {
+                    refreshBtn.classList.remove('spinning');
+                    document.getElementById('location-status').innerHTML = '<span class="loc-error">Could not find that location. Try a different search.</span>';
+                    showError('Could not find "' + query + '". Try an address, town, or business name in Iceland.', false);
+                    return;
+                }
+                var geo = results[0];
+                appState.userLat = geo.lat;
+                appState.userLng = geo.lng;
+                appState.addressName = geo.shortName || geo.name;
             }
-            appState.userLat = geo.lat;
-            appState.userLng = geo.lng;
-            appState.addressName = geo.name;
             document.getElementById('location-status').innerHTML = 'Using: <span class="loc-name">' + geo.name + '</span>';
         } else {
             showLoading('Finding your location...');
@@ -1125,13 +1157,18 @@
     var addressRow = document.getElementById('location-address-row');
     var locationInput = document.getElementById('location-input');
     var locationGoBtn = document.getElementById('location-go-btn');
+    var acDropdown = document.getElementById('autocomplete-dropdown');
+    var acHighlightIdx = -1;
+    var acResults = [];
 
     gpsBtn.addEventListener('click', function () {
         gpsBtn.classList.add('active');
         addressBtn.classList.remove('active');
         addressRow.style.display = 'none';
         appState.locationMode = 'gps';
+        appState.pendingGeo = null;
         document.getElementById('location-status').innerHTML = '';
+        closeAutocomplete();
         loadData();
     });
 
@@ -1144,14 +1181,121 @@
     });
 
     locationGoBtn.addEventListener('click', function () {
+        closeAutocomplete();
         loadData();
     });
 
     locationInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-            loadData();
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            acHighlightIdx = Math.min(acHighlightIdx + 1, acResults.length - 1);
+            updateAcHighlight();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            acHighlightIdx = Math.max(acHighlightIdx - 1, -1);
+            updateAcHighlight();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (acHighlightIdx >= 0 && acResults[acHighlightIdx]) {
+                selectAcResult(acResults[acHighlightIdx]);
+            } else {
+                closeAutocomplete();
+                loadData();
+            }
+        } else if (e.key === 'Escape') {
+            closeAutocomplete();
         }
     });
+
+    locationInput.addEventListener('input', function () {
+        var query = locationInput.value.trim();
+        if (query.length < 2) {
+            closeAutocomplete();
+            return;
+        }
+        debounceSearch(function () {
+            showAcLoading();
+            geocodeSearch(query).then(function (results) {
+                acResults = results;
+                acHighlightIdx = -1;
+                renderAcResults(results);
+            });
+        }, 350);
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.location-input-wrapper')) {
+            closeAutocomplete();
+        }
+    });
+
+    function showAcLoading() {
+        acDropdown.innerHTML = '<div class="autocomplete-loading">Searching...</div>';
+        acDropdown.classList.add('open');
+    }
+
+    function renderAcResults(results) {
+        if (!results || results.length === 0) {
+            acDropdown.innerHTML = '<div class="autocomplete-loading">No results found</div>';
+            acDropdown.classList.add('open');
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            var mainName = r.shortName;
+            var detail = r.name.length > mainName.length ? r.name : '';
+            html += '<div class="autocomplete-item" data-index="' + i + '">'
+                + '<div class="ac-main">' + escapeHtml(mainName) + '</div>'
+                + (detail ? '<div class="ac-detail">' + escapeHtml(detail) + '</div>' : '')
+                + '</div>';
+        }
+        acDropdown.innerHTML = html;
+        acDropdown.classList.add('open');
+
+        // Attach click handlers
+        var items = acDropdown.querySelectorAll('.autocomplete-item');
+        items.forEach(function (item) {
+            item.addEventListener('click', function () {
+                var idx = parseInt(item.dataset.index, 10);
+                if (acResults[idx]) {
+                    selectAcResult(acResults[idx]);
+                }
+            });
+        });
+    }
+
+    function selectAcResult(result) {
+        locationInput.value = result.shortName;
+        appState.pendingGeo = result;
+        closeAutocomplete();
+        loadData();
+    }
+
+    function closeAutocomplete() {
+        acDropdown.classList.remove('open');
+        acDropdown.innerHTML = '';
+        acResults = [];
+        acHighlightIdx = -1;
+    }
+
+    function updateAcHighlight() {
+        var items = acDropdown.querySelectorAll('.autocomplete-item');
+        items.forEach(function (item, i) {
+            if (i === acHighlightIdx) {
+                item.classList.add('highlighted');
+            } else {
+                item.classList.remove('highlighted');
+            }
+        });
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
 
     // ---- Init ----
     loadData();
