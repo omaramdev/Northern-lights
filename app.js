@@ -146,7 +146,9 @@
         kpForecast: [],
         lastUpdated: null,
         loading: true,
-        locationError: null
+        locationError: null,
+        locationMode: 'gps', // 'gps' or 'address'
+        addressName: null     // display name when using address mode
     };
 
     // ============================================================
@@ -251,6 +253,41 @@
             });
         });
         return Promise.all(promises);
+    }
+
+    // ============================================================
+    // GEOCODING (Open-Meteo — free, no API key)
+    // ============================================================
+
+    async function geocodeAddress(query) {
+        try {
+            var url = 'https://geocoding-api.open-meteo.com/v1/search'
+                + '?name=' + encodeURIComponent(query)
+                + '&count=5'
+                + '&language=en'
+                + '&format=json';
+
+            var res = await fetch(url);
+            if (!res.ok) return null;
+            var data = await res.json();
+
+            if (data.results && data.results.length > 0) {
+                // Prefer results in Iceland, otherwise take the first
+                var icelandResult = data.results.find(function (r) {
+                    return r.country_code === 'IS';
+                });
+                var result = icelandResult || data.results[0];
+                return {
+                    lat: result.latitude,
+                    lng: result.longitude,
+                    name: result.name + (result.admin1 ? ', ' + result.admin1 : '')
+                        + (result.country ? ', ' + result.country : '')
+                };
+            }
+        } catch (e) {
+            console.warn('Geocoding error:', e);
+        }
+        return null;
     }
 
     // ============================================================
@@ -770,7 +807,8 @@
             return;
         }
 
-        var html = '<div class="section-label">Best spots near you (' + filtered.length + ' found)</div>'
+        var nearLabel = appState.addressName ? 'Best spots near ' + appState.addressName.split(',')[0] : 'Best spots near you';
+        var html = '<div class="section-label">' + nearLabel + ' (' + filtered.length + ' found)</div>'
             + '<div class="spots-list">';
 
         for (var i = 0; i < filtered.length; i++) {
@@ -932,25 +970,48 @@
         var refreshBtn = document.getElementById('refresh-btn');
         refreshBtn.classList.add('spinning');
 
-        showLoading('Finding your location...');
-
-        // Step 1: Get user location
-        try {
-            var loc = await getUserLocation();
-            appState.userLat = loc.lat;
-            appState.userLng = loc.lng;
-        } catch (err) {
-            refreshBtn.classList.remove('spinning');
-            var msg = 'Location access is needed to find spots near you.';
-            if (err.code === 1) {
-                msg = 'Location permission denied. Please enable location access in your browser settings and reload.';
-            } else if (err.code === 2) {
-                msg = 'Could not determine your location. Make sure GPS is enabled.';
-            } else if (err.code === 3) {
-                msg = 'Location request timed out. Please check your connection and try again.';
+        // Step 1: Get user location (GPS or address)
+        if (appState.locationMode === 'address') {
+            var addressInput = document.getElementById('location-input');
+            var query = addressInput.value.trim();
+            if (!query) {
+                refreshBtn.classList.remove('spinning');
+                showError('Please enter an address or place name.', false);
+                return;
             }
-            showError(msg, true);
-            return;
+            showLoading('Looking up "' + query + '"...');
+            var geo = await geocodeAddress(query);
+            if (!geo) {
+                refreshBtn.classList.remove('spinning');
+                document.getElementById('location-status').innerHTML = '<span class="loc-error">Could not find that location. Try a different search.</span>';
+                showError('Could not find "' + query + '". Try a town name like Akureyri or Vik.', false);
+                return;
+            }
+            appState.userLat = geo.lat;
+            appState.userLng = geo.lng;
+            appState.addressName = geo.name;
+            document.getElementById('location-status').innerHTML = 'Using: <span class="loc-name">' + geo.name + '</span>';
+        } else {
+            showLoading('Finding your location...');
+            try {
+                var loc = await getUserLocation();
+                appState.userLat = loc.lat;
+                appState.userLng = loc.lng;
+                appState.addressName = null;
+                document.getElementById('location-status').innerHTML = '';
+            } catch (err) {
+                refreshBtn.classList.remove('spinning');
+                var msg = 'Location access is needed to find spots near you.';
+                if (err.code === 1) {
+                    msg = 'Location permission denied. Please enable location access in your browser settings and reload.';
+                } else if (err.code === 2) {
+                    msg = 'Could not determine your location. Make sure GPS is enabled.';
+                } else if (err.code === 3) {
+                    msg = 'Location request timed out. Please check your connection and try again.';
+                }
+                showError(msg, true);
+                return;
+            }
         }
 
         showLoading('Checking aurora activity...');
@@ -1054,6 +1115,40 @@
 
     document.getElementById('sort-by').addEventListener('change', function () {
         if (appState.lastUpdated) {
+            loadData();
+        }
+    });
+
+    // ---- Location picker ----
+    var gpsBtn = document.getElementById('loc-gps-btn');
+    var addressBtn = document.getElementById('loc-address-btn');
+    var addressRow = document.getElementById('location-address-row');
+    var locationInput = document.getElementById('location-input');
+    var locationGoBtn = document.getElementById('location-go-btn');
+
+    gpsBtn.addEventListener('click', function () {
+        gpsBtn.classList.add('active');
+        addressBtn.classList.remove('active');
+        addressRow.style.display = 'none';
+        appState.locationMode = 'gps';
+        document.getElementById('location-status').innerHTML = '';
+        loadData();
+    });
+
+    addressBtn.addEventListener('click', function () {
+        addressBtn.classList.add('active');
+        gpsBtn.classList.remove('active');
+        addressRow.style.display = 'flex';
+        appState.locationMode = 'address';
+        locationInput.focus();
+    });
+
+    locationGoBtn.addEventListener('click', function () {
+        loadData();
+    });
+
+    locationInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
             loadData();
         }
     });
