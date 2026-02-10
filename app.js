@@ -442,6 +442,16 @@
 
     function calculateSpotScore(spot, cloudAtArrival, kpAtArrival, isDark, hoursRemaining, driveMinutes) {
         // Score from 0-100 based on multiple factors
+        // Cloud cover and darkness are hard gates — if you can't see the sky,
+        // nothing else matters.
+
+        // Hard gate: not dark = can't see aurora
+        if (!isDark) return 5;
+
+        // Hard gate: overcast sky = can't see through clouds
+        if (cloudAtArrival !== null && cloudAtArrival >= 90) return 8;
+        if (cloudAtArrival !== null && cloudAtArrival >= 75) return Math.min(20, kpAtArrival * 3);
+
         var score = 0;
 
         // Kp factor (0-35 points)
@@ -453,6 +463,7 @@
         else if (kpAtArrival >= 1) score += 8;
 
         // Cloud cover factor (0-35 points)
+        // Heavily weighted — clouds block everything
         if (cloudAtArrival !== null) {
             var clearness = 100 - cloudAtArrival;
             score += Math.round((clearness / 100) * 35);
@@ -461,9 +472,7 @@
         }
 
         // Darkness factor (0-20 points)
-        if (!isDark) {
-            score = Math.min(score, 10); // Cap score if it won't be dark
-        } else if (hoursRemaining >= 4) {
+        if (hoursRemaining >= 4) {
             score += 20;
         } else if (hoursRemaining >= 2) {
             score += 15;
@@ -666,26 +675,36 @@
         var darkPct = Math.min(100, (spot.hoursRemaining / 8) * 100);
         var darkColor = spot.hoursRemaining >= 3 ? 'var(--bar-fill-good)' : spot.hoursRemaining >= 1 ? 'var(--bar-fill-ok)' : 'var(--bar-fill-bad)';
 
-        // Verdict
+        // Verdict — cloud cover is the #1 gatekeeper
         var verdictClass, verdictText;
+        var overcast = spot.cloudAtArrival !== null && spot.cloudAtArrival >= 90;
+        var heavyClouds = spot.cloudAtArrival !== null && spot.cloudAtArrival >= 70;
+
         if (!spot.isDarkAtArrival) {
             verdictClass = 'verdict-negative';
             verdictText = 'Sky won\'t be dark enough when you arrive';
-        } else if (spot.score >= 55 && spot.cloudAtArrival !== null && spot.cloudAtArrival <= 40) {
+        } else if (overcast) {
+            verdictClass = 'verdict-negative';
+            verdictText = 'Overcast — clouds will block the view (' + spot.cloudAtArrival + '% cloud cover)';
+        } else if (heavyClouds) {
+            verdictClass = 'verdict-negative';
+            verdictText = 'Heavy cloud cover (' + spot.cloudAtArrival + '%) — very unlikely to see aurora';
+        } else if (spot.cloudAtArrival !== null && spot.cloudAtArrival >= 50) {
+            verdictClass = 'verdict-caution';
+            verdictText = 'Partly cloudy (' + spot.cloudAtArrival + '%) — may get glimpses between gaps';
+        } else if (spot.score >= 55) {
             verdictClass = 'verdict-positive';
             verdictText = 'Aurora likely visible when you arrive — '
                 + spot.hoursRemaining.toFixed(1) + ' hrs of darkness remaining';
         } else if (spot.score >= 35) {
             verdictClass = 'verdict-caution';
             var reasons = [];
-            if (spot.cloudAtArrival !== null && spot.cloudAtArrival > 50) reasons.push('partly cloudy');
             if (spot.kpAtArrival < 2) reasons.push('low aurora activity');
             if (spot.hoursRemaining < 2) reasons.push('limited darkness remaining');
             verdictText = 'Possible viewing' + (reasons.length > 0 ? ' — ' + reasons.join(', ') : '');
         } else {
             verdictClass = 'verdict-negative';
             var badReasons = [];
-            if (spot.cloudAtArrival !== null && spot.cloudAtArrival > 70) badReasons.push('heavy cloud cover');
             if (spot.kpAtArrival < 2) badReasons.push('weak aurora activity');
             if (spot.hoursRemaining < 1) badReasons.push('almost sunrise');
             verdictText = 'Low chance' + (badReasons.length > 0 ? ' — ' + badReasons.join(', ') : '');
