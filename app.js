@@ -99,7 +99,7 @@
                 function (err) {
                     reject(err);
                 },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         });
     }
@@ -914,11 +914,27 @@
                 + '  <span class="forecast-sep">&middot;</span>'
                 + '  <span>' + w.spot.driveMinutes + ' min drive</span>'
                 + '</div>'
+                + '<button class="navigate-btn forecast-nav-btn" data-lat="' + w.spot.lat + '" data-lng="' + w.spot.lng + '" data-name="' + w.spot.name + '">'
+                + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+                + '<polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>'
+                + 'Navigate to ' + w.spot.name
+                + '</button>'
                 + '</div>';
         }
 
         html += '</div></div>';
         container.innerHTML = html;
+
+        // Attach navigation click handlers to forecast cards
+        var forecastNavBtns = container.querySelectorAll('.forecast-nav-btn');
+        forecastNavBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var lat = parseFloat(btn.dataset.lat);
+                var lng = parseFloat(btn.dataset.lng);
+                var name = btn.dataset.name;
+                openNavigation(lat, lng, name);
+            });
+        });
     }
 
     function formatForecastTime(date, hoursFromNow) {
@@ -985,9 +1001,11 @@
             var elevLabel = s.elevationCenter !== null ? (s.elevationCenter + 'm elev') : '';
 
             var badgeClass, badgeText;
-            if (s.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
+            if (!s.isDarkAtArrival) { badgeClass = 'badge-poor'; badgeText = 'Not visible'; }
+            else if (s.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
             else if (s.score >= 55) { badgeClass = 'badge-good'; badgeText = 'Good'; }
             else if (s.score >= 35) { badgeClass = 'badge-fair'; badgeText = 'Fair'; }
+            else if (s.cloudAtArrival !== null && s.cloudAtArrival >= 90) { badgeClass = 'badge-poor'; badgeText = 'Not visible'; }
             else { badgeClass = 'badge-poor'; badgeText = 'Poor'; }
 
             // Verdict text based on conditions
@@ -997,7 +1015,7 @@
 
             if (!s.isDarkAtArrival) {
                 verdictClass = 'verdict-negative';
-                verdictText = 'Sky won\'t be dark enough when you arrive';
+                verdictText = 'Not dark yet — aurora is only visible at night';
             } else if (overcast) {
                 verdictClass = 'verdict-negative';
                 verdictText = 'Overcast — clouds will block the view';
