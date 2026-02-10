@@ -492,6 +492,68 @@
     }
 
     // ============================================================
+    // 48-HOUR FORECAST — find best future viewing windows
+    // ============================================================
+
+    function findBestWindows(spots, cloudMap, forecast, userLat, userLng) {
+        // Scan every hour for the next 48 hours across all spots
+        // and return the top windows sorted by score
+        var now = new Date();
+        var windows = [];
+        var hoursToScan = 48;
+
+        for (var h = 0; h < hoursToScan; h++) {
+            var checkTime = new Date(now.getTime() + h * 3600000);
+            var kpAtTime = getKpAtTime(forecast, checkTime);
+
+            for (var s = 0; s < spots.length; s++) {
+                var spot = spots[s];
+                var cloudData = cloudMap[spot.name] || null;
+                var cloudAtTime = cloudData ? getCloudCoverAtTime(cloudData, checkTime) : null;
+
+                var spotSunTimes = calcSunTimes(spot.lat, spot.lng, checkTime);
+                var isDark = isDarkForAurora(spotSunTimes, checkTime);
+                var hoursRemaining = getHoursOfDarknessRemaining(spotSunTimes, checkTime);
+
+                // Skip daytime — no point scoring when it's bright
+                if (!isDark) continue;
+
+                var score = calculateSpotScore(spot, cloudAtTime, kpAtTime, isDark, hoursRemaining, spot.driveMinutes);
+
+                // Only include windows that are at least "Fair"
+                if (score < 35) continue;
+
+                windows.push({
+                    spot: spot,
+                    time: checkTime,
+                    score: score,
+                    kp: kpAtTime,
+                    cloud: cloudAtTime,
+                    hoursRemaining: hoursRemaining,
+                    hoursFromNow: h
+                });
+            }
+        }
+
+        // Sort by score descending
+        windows.sort(function (a, b) { return b.score - a.score; });
+
+        // Deduplicate: keep best window per spot (they tend to cluster)
+        var seen = {};
+        var best = [];
+        for (var i = 0; i < windows.length; i++) {
+            var w = windows[i];
+            if (!seen[w.spot.name]) {
+                seen[w.spot.name] = true;
+                best.push(w);
+            }
+            if (best.length >= 5) break;
+        }
+
+        return best;
+    }
+
+    // ============================================================
     // UI RENDERING
     // ============================================================
 
@@ -597,6 +659,82 @@
                     + '</div>';
             }
         }
+    }
+
+    function renderForecastWindows(windows) {
+        var container = document.getElementById('forecast-windows');
+
+        if (!windows || windows.length === 0) {
+            container.innerHTML = '<div class="forecast-section">'
+                + '<div class="section-label">Best viewing in next 48 hours</div>'
+                + '<div class="forecast-empty">No good viewing windows found in the next 48 hours. '
+                + 'Conditions may improve — check back later.</div>'
+                + '</div>';
+            return;
+        }
+
+        var html = '<div class="forecast-section">'
+            + '<div class="section-label">Best viewing in next 48 hours</div>'
+            + '<div class="forecast-list">';
+
+        for (var i = 0; i < windows.length; i++) {
+            var w = windows[i];
+            var badgeClass, badgeText;
+            if (w.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
+            else if (w.score >= 55) { badgeClass = 'badge-good'; badgeText = 'Good'; }
+            else { badgeClass = 'badge-fair'; badgeText = 'Fair'; }
+
+            var kpInfo = getKpInfo(w.kp);
+            var clearPct = w.cloud !== null ? (100 - w.cloud) : null;
+            var clearLabel = clearPct !== null ? (clearPct + '% clear') : 'Cloud data N/A';
+            var clearColor = clearPct !== null
+                ? (clearPct >= 70 ? 'var(--accent)' : clearPct >= 40 ? 'var(--warning)' : 'var(--danger)')
+                : 'var(--text-secondary)';
+
+            // Format when
+            var whenStr = formatForecastTime(w.time, w.hoursFromNow);
+
+            html += '<div class="forecast-card' + (i === 0 ? ' top-pick' : '') + '">'
+                + '<div class="forecast-card-header">'
+                + '  <div class="forecast-when">' + whenStr + '</div>'
+                + '  <span class="spot-badge ' + badgeClass + '">' + badgeText + '</span>'
+                + '</div>'
+                + '<div class="forecast-spot-name">' + w.spot.name + '</div>'
+                + '<div class="forecast-details">'
+                + '  <span style="color:' + kpInfo.color + '">Kp ' + w.kp.toFixed(1) + '</span>'
+                + '  <span class="forecast-sep">&middot;</span>'
+                + '  <span style="color:' + clearColor + '">' + clearLabel + '</span>'
+                + '  <span class="forecast-sep">&middot;</span>'
+                + '  <span>' + w.spot.driveMinutes + ' min drive</span>'
+                + '</div>'
+                + '</div>';
+        }
+
+        html += '</div></div>';
+        container.innerHTML = html;
+    }
+
+    function formatForecastTime(date, hoursFromNow) {
+        var now = new Date();
+        var tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        var dayLabel;
+        if (date.getDate() === now.getDate() && date.getMonth() === now.getMonth()) {
+            dayLabel = 'Tonight';
+        } else if (date.getDate() === tomorrow.getDate() && date.getMonth() === tomorrow.getMonth()) {
+            dayLabel = 'Tomorrow';
+        } else {
+            var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            dayLabel = days[date.getDay()];
+        }
+
+        var timeStr = formatTime(date);
+        var inHours = hoursFromNow < 1
+            ? 'now'
+            : (hoursFromNow < 24 ? 'in ' + hoursFromNow + 'h' : 'in ' + Math.round(hoursFromNow) + 'h');
+
+        return dayLabel + ' at ' + timeStr + ' <span class="forecast-in">(' + inHours + ')</span>';
     }
 
     function renderSpotCards(spots) {
@@ -837,15 +975,11 @@
             });
         });
 
-        // Only fetch cloud cover for spots within reasonable range (max + some buffer)
-        var relevantSpots = spotsWithDistance.filter(function (s) {
-            return s.driveMinutes <= Math.max(maxDrive, 180);
-        });
+        // Fetch cloud cover for all spots (needed for 48-hour forecast)
+        showLoading('Checking cloud cover at ' + spotsWithDistance.length + ' locations...');
 
-        showLoading('Checking cloud cover at ' + relevantSpots.length + ' locations...');
-
-        // Step 4: Fetch cloud cover for relevant spots
-        var cloudResults = await fetchCloudCoverForSpots(relevantSpots);
+        // Step 4: Fetch cloud cover for all spots
+        var cloudResults = await fetchCloudCoverForSpots(spotsWithDistance);
         var cloudMap = {};
         cloudResults.forEach(function (r) {
             cloudMap[r.spot.name] = r.cloudData;
@@ -892,7 +1026,11 @@
             });
         });
 
-        // Step 6: Render results
+        // Step 6: Find best 48-hour forecast windows
+        var bestWindows = findBestWindows(spotsWithDistance, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
+        renderForecastWindows(bestWindows);
+
+        // Step 7: Render current spot results
         renderSpotCards(enrichedSpots);
 
         appState.lastUpdated = now;

@@ -478,6 +478,74 @@
             color: var(--danger);
         }
 
+        /* ---- 48-Hour Forecast Windows ---- */
+        .forecast-section {
+            margin-bottom: 20px;
+        }
+
+        .forecast-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .forecast-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }
+
+        .forecast-card.top-pick {
+            border-color: var(--accent-dim);
+        }
+
+        .forecast-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .forecast-when {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .forecast-in {
+            font-weight: 400;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .forecast-spot-name {
+            font-size: 15px;
+            color: var(--accent);
+            margin-bottom: 6px;
+        }
+
+        .forecast-details {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .forecast-sep {
+            margin: 0 6px;
+            opacity: 0.4;
+        }
+
+        .forecast-empty {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
         /* ---- Footer ---- */
         .footer {
             text-align: center;
@@ -537,6 +605,7 @@
 
         <div id="darkness-info"></div>
         <div id="last-updated"></div>
+        <div id="forecast-windows"></div>
         <div id="spots-container">
             <div class="loading">
                 <div class="loading-spinner"></div>
