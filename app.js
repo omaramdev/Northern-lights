@@ -666,10 +666,17 @@
         var kpInfo = getKpInfo(spot.kpAtArrival);
 
         // Cloud bar (inverted: lower cloud = better = more green)
-        var cloudPct = spot.cloudAtArrival !== null ? spot.cloudAtArrival : 50;
-        var clearPct = 100 - cloudPct;
-        var cloudColor = clearPct >= 70 ? 'var(--bar-fill-good)' : clearPct >= 40 ? 'var(--bar-fill-ok)' : 'var(--bar-fill-bad)';
-        var cloudLabel = spot.cloudAtArrival !== null ? (spot.cloudAtArrival + '%') : 'N/A';
+        var cloudKnown = spot.cloudAtArrival !== null;
+        var clearPct, cloudColor, cloudLabel;
+        if (cloudKnown) {
+            clearPct = 100 - spot.cloudAtArrival;
+            cloudColor = clearPct >= 70 ? 'var(--bar-fill-good)' : clearPct >= 40 ? 'var(--bar-fill-ok)' : 'var(--bar-fill-bad)';
+            cloudLabel = clearPct + '%';
+        } else {
+            clearPct = 0;
+            cloudColor = 'var(--text-secondary)';
+            cloudLabel = 'No data';
+        }
 
         // Darkness bar
         var darkPct = Math.min(100, (spot.hoursRemaining / 8) * 100);
