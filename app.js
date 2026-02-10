@@ -9,8 +9,8 @@
     'use strict';
 
     // ---- Curated viewing spots across Iceland ----
-    // Each spot is a known dark-sky location away from light pollution
-    const VIEWING_SPOTS = [
+    // These are famous/scenic spots — kept as a secondary "iconic spots" list
+    const CURATED_SPOTS = [
         {
             name: 'Thingvellir National Park',
             lat: 64.2558,
@@ -120,6 +120,45 @@
             desc: 'Coastal village on the peninsula, very low light pollution'
         }
     ];
+
+    // ---- Iceland populated areas (light pollution sources) ----
+    // Population-weighted: larger towns emit more light
+    const LIGHT_SOURCES = [
+        { name: 'Reykjavik', lat: 64.1466, lng: -21.9426, pop: 140000 },
+        { name: 'Kopavogur', lat: 64.1101, lng: -21.9132, pop: 38000 },
+        { name: 'Hafnarfjordur', lat: 64.0671, lng: -21.9538, pop: 30000 },
+        { name: 'Akureyri', lat: 65.6835, lng: -18.0878, pop: 19000 },
+        { name: 'Keflavik', lat: 64.0048, lng: -22.5628, pop: 16000 },
+        { name: 'Selfoss', lat: 63.9330, lng: -20.9971, pop: 8000 },
+        { name: 'Akranes', lat: 64.3218, lng: -22.0756, pop: 7500 },
+        { name: 'Ísafjörður', lat: 66.0750, lng: -23.1350, pop: 2600 },
+        { name: 'Vestmannaeyjar', lat: 63.4437, lng: -20.2690, pop: 4500 },
+        { name: 'Egilsstadir', lat: 65.2667, lng: -14.3948, pop: 2500 },
+        { name: 'Hella', lat: 63.8369, lng: -20.3761, pop: 800 },
+        { name: 'Hvolsvöllur', lat: 63.7496, lng: -20.2258, pop: 900 },
+        { name: 'Vik', lat: 63.4186, lng: -19.0060, pop: 750 },
+        { name: 'Höfn', lat: 64.2539, lng: -15.2082, pop: 2200 },
+        { name: 'Húsavík', lat: 66.0449, lng: -17.3380, pop: 2300 },
+        { name: 'Dalvík', lat: 65.9696, lng: -18.5284, pop: 1400 },
+        { name: 'Blönduós', lat: 65.6620, lng: -20.2871, pop: 900 },
+        { name: 'Sauðárkrókur', lat: 65.7465, lng: -19.6394, pop: 2600 },
+        { name: 'Borgarnes', lat: 64.5383, lng: -21.9200, pop: 2000 }
+    ];
+
+    // Compass directions for generating nearby points
+    var DIRECTIONS = [
+        { name: 'N',  bearing: 0 },
+        { name: 'NE', bearing: 45 },
+        { name: 'E',  bearing: 90 },
+        { name: 'SE', bearing: 135 },
+        { name: 'S',  bearing: 180 },
+        { name: 'SW', bearing: 225 },
+        { name: 'W',  bearing: 270 },
+        { name: 'NW', bearing: 315 }
+    ];
+
+    // Distances in km to generate candidate points
+    var NEARBY_DISTANCES = [10, 20, 35];
 
     // ---- Kp index interpretation for Iceland's latitude (63-66 N) ----
     // At these latitudes, aurora is visible at lower Kp values
@@ -452,6 +491,93 @@
     function estimateDriveMinutes(straightLineKm) {
         var roadKm = straightLineKm * ROAD_WINDING_FACTOR;
         return Math.round((roadKm / AVG_SPEED_KMH) * 60);
+    }
+
+    // ============================================================
+    // NEARBY DARK-SKY SPOT GENERATION
+    // ============================================================
+
+    function pointAtBearing(lat, lng, bearingDeg, distKm) {
+        // Calculate a new lat/lng given a start point, bearing, and distance
+        var R = 6371;
+        var latRad = toRad(lat);
+        var lngRad = toRad(lng);
+        var brng = toRad(bearingDeg);
+        var d = distKm / R;
+
+        var newLat = Math.asin(
+            Math.sin(latRad) * Math.cos(d) +
+            Math.cos(latRad) * Math.sin(d) * Math.cos(brng)
+        );
+        var newLng = lngRad + Math.atan2(
+            Math.sin(brng) * Math.sin(d) * Math.cos(latRad),
+            Math.cos(d) - Math.sin(latRad) * Math.sin(newLat)
+        );
+
+        return { lat: toDeg(newLat), lng: toDeg(newLng) };
+    }
+
+    function getLightPollutionScore(lat, lng) {
+        // Returns 0-100 where 0 = very dark (good) and 100 = bright (bad)
+        // Based on inverse-square-law contributions from all towns
+        var totalLight = 0;
+
+        for (var i = 0; i < LIGHT_SOURCES.length; i++) {
+            var src = LIGHT_SOURCES[i];
+            var dist = haversineDistance(lat, lng, src.lat, src.lng);
+            if (dist < 1) dist = 1; // avoid division by zero
+            // Light pollution falls off roughly with distance squared
+            // Population scales the brightness
+            totalLight += (src.pop / 1000) / (dist * dist) * 100;
+        }
+
+        // Normalize: Reykjavik center ~ 100, remote countryside ~ 0-5
+        return Math.min(100, totalLight);
+    }
+
+    function generateNearbySpots(userLat, userLng) {
+        // Generate candidate dark-sky points around the user
+        var candidates = [];
+
+        for (var d = 0; d < NEARBY_DISTANCES.length; d++) {
+            var dist = NEARBY_DISTANCES[d];
+            for (var i = 0; i < DIRECTIONS.length; i++) {
+                var dir = DIRECTIONS[i];
+                var pt = pointAtBearing(userLat, userLng, dir.bearing, dist);
+                var lightPollution = getLightPollutionScore(pt.lat, pt.lng);
+                var driveMin = estimateDriveMinutes(dist);
+
+                candidates.push({
+                    name: dist + ' km ' + dir.name,
+                    lat: pt.lat,
+                    lng: pt.lng,
+                    desc: 'Drive ' + dir.name + ' for ' + driveMin + ' min',
+                    distanceKm: dist,
+                    driveMinutes: driveMin,
+                    lightPollution: lightPollution,
+                    direction: dir.name,
+                    isNearby: true
+                });
+            }
+        }
+
+        // Filter out spots that are too close to towns (light pollution > 15)
+        // and keep the best per direction (darkest)
+        var bestPerDirection = {};
+        candidates.forEach(function (c) {
+            if (c.lightPollution > 15) return; // skip bright areas
+            var key = c.direction;
+            if (!bestPerDirection[key] || c.lightPollution < bestPerDirection[key].lightPollution) {
+                bestPerDirection[key] = c;
+            }
+        });
+
+        var result = Object.values(bestPerDirection);
+
+        // Sort by light pollution (darkest first)
+        result.sort(function (a, b) { return a.lightPollution - b.lightPollution; });
+
+        return result;
     }
 
     // ============================================================
@@ -797,6 +923,79 @@
         return dayLabel + ' at ' + timeStr + ' <span class="forecast-in">(' + inHours + ')</span>';
     }
 
+    function renderNearbySpots(spots) {
+        var container = document.getElementById('nearby-container');
+
+        // Sort by score descending
+        var sorted = spots.slice().sort(function (a, b) { return b.score - a.score; });
+
+        if (sorted.length === 0) {
+            container.innerHTML = '<div class="section-label">Nearby dark-sky spots</div>'
+                + '<div class="no-spots-message">No dark-sky spots generated — you may be too close to a town in all directions.</div>';
+            return;
+        }
+
+        var html = '<div class="section-label">Nearby dark-sky spots</div>'
+            + '<div class="nearby-hint">Dark spots near you based on distance from town lights and cloud cover</div>'
+            + '<div class="nearby-list">';
+
+        for (var i = 0; i < sorted.length; i++) {
+            var s = sorted[i];
+            var kpInfo = getKpInfo(s.kpAtArrival);
+
+            var cloudKnown = s.cloudAtArrival !== null;
+            var clearPct = cloudKnown ? (100 - s.cloudAtArrival) : null;
+            var clearLabel = clearPct !== null ? (clearPct + '% clear') : 'No data';
+            var clearColor = clearPct !== null
+                ? (clearPct >= 70 ? 'var(--accent)' : clearPct >= 40 ? 'var(--warning)' : 'var(--danger)')
+                : 'var(--text-secondary)';
+
+            var darkLabel = s.lightPollution < 3 ? 'Very dark' : s.lightPollution < 8 ? 'Dark' : 'Moderate';
+            var darkColor = s.lightPollution < 3 ? 'var(--accent)' : s.lightPollution < 8 ? '#66f0a8' : 'var(--warning)';
+
+            var badgeClass, badgeText;
+            if (s.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
+            else if (s.score >= 55) { badgeClass = 'badge-good'; badgeText = 'Good'; }
+            else if (s.score >= 35) { badgeClass = 'badge-fair'; badgeText = 'Fair'; }
+            else { badgeClass = 'badge-poor'; badgeText = 'Poor'; }
+
+            html += '<div class="nearby-card' + (i === 0 ? ' top-pick' : '') + '">'
+                + '<div class="nearby-card-header">'
+                + '  <div class="nearby-direction">' + s.name + '</div>'
+                + '  <span class="spot-badge ' + badgeClass + '">' + badgeText + '</span>'
+                + '</div>'
+                + '<div class="nearby-details">'
+                + '  <span>~' + s.driveMinutes + ' min drive</span>'
+                + '  <span class="forecast-sep">&middot;</span>'
+                + '  <span style="color:' + darkColor + '">' + darkLabel + '</span>'
+                + '  <span class="forecast-sep">&middot;</span>'
+                + '  <span style="color:' + clearColor + '">' + clearLabel + '</span>'
+                + '  <span class="forecast-sep">&middot;</span>'
+                + '  <span style="color:' + kpInfo.color + '">Kp ' + s.kpAtArrival.toFixed(1) + '</span>'
+                + '</div>'
+                + '<button class="navigate-btn nearby-nav-btn" data-lat="' + s.lat + '" data-lng="' + s.lng + '" data-name="' + s.name + '">'
+                + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+                + '<polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>'
+                + 'Navigate ' + s.name
+                + '</button>'
+                + '</div>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Attach navigation click handlers
+        var navBtns = container.querySelectorAll('.nearby-nav-btn');
+        navBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var lat = parseFloat(btn.dataset.lat);
+                var lng = parseFloat(btn.dataset.lng);
+                var name = btn.dataset.name;
+                openNavigation(lat, lng, name);
+            });
+        });
+    }
+
     function renderSpotCards(spots) {
         var container = document.getElementById('spots-container');
         var maxDrive = parseInt(document.getElementById('max-drive-time').value, 10);
@@ -830,7 +1029,7 @@
             return;
         }
 
-        var nearLabel = appState.addressName ? 'Best spots near ' + appState.addressName.split(',')[0] : 'Best spots near you';
+        var nearLabel = appState.addressName ? 'Iconic spots near ' + appState.addressName.split(',')[0] : 'Iconic viewing spots';
         var html = '<div class="section-label">' + nearLabel + ' (' + filtered.length + ' found)</div>'
             + '<div class="spots-list">';
 
@@ -1022,7 +1221,7 @@
                 appState.userLng = geo.lng;
                 appState.addressName = geo.shortName || geo.name;
             }
-            document.getElementById('location-status').innerHTML = 'Using: <span class="loc-name">' + geo.name + '</span>';
+            document.getElementById('location-status').innerHTML = 'Using: <span class="loc-name">' + appState.addressName + '</span>';
         } else {
             showLoading('Finding your location...');
             try {
@@ -1055,54 +1254,56 @@
 
         renderAuroraStatus(appState.kpCurrent, appState.kpForecast);
 
-        // Step 3: Calculate distances and filter by max drive time
+        // Step 3: Generate nearby dark-sky candidate spots + curated spots
         var now = new Date();
         var maxDrive = parseInt(document.getElementById('max-drive-time').value, 10);
 
-        var spotsWithDistance = VIEWING_SPOTS.map(function (spot) {
+        // Generate nearby dark-sky points based on user's actual location
+        var nearbySpots = generateNearbySpots(appState.userLat, appState.userLng);
+
+        // Calculate distances for curated spots
+        var curatedWithDistance = CURATED_SPOTS.map(function (spot) {
             var dist = haversineDistance(appState.userLat, appState.userLng, spot.lat, spot.lng);
             var driveMin = estimateDriveMinutes(dist);
             return Object.assign({}, spot, {
                 distanceKm: dist,
-                driveMinutes: driveMin
+                driveMinutes: driveMin,
+                isNearby: false
             });
         });
 
-        // Fetch cloud cover for all spots (needed for 48-hour forecast)
-        showLoading('Checking cloud cover at ' + spotsWithDistance.length + ' locations...');
+        // Combine both lists for cloud cover fetching
+        var allSpots = nearbySpots.concat(curatedWithDistance);
+
+        showLoading('Checking cloud cover at ' + allSpots.length + ' locations...');
 
         // Step 4: Fetch cloud cover for all spots
-        var cloudResults = await fetchCloudCoverForSpots(spotsWithDistance);
+        var cloudResults = await fetchCloudCoverForSpots(allSpots);
         var cloudMap = {};
         cloudResults.forEach(function (r) {
             cloudMap[r.spot.name] = r.cloudData;
         });
 
         // Step 5: Calculate sun times and visibility scores
-        // Use user's location for sun calculations (close enough for all Iceland)
         var sunTimesToday = calcSunTimes(appState.userLat, appState.userLng, now);
 
-        // Also calculate for tomorrow in case we're past midnight
         var tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
         var sunTimesTomorrow = calcSunTimes(appState.userLat, appState.userLng, tomorrow);
 
-        // Use today's sun times, but if sunrise already passed, use tomorrow's for "dark end"
         var sunTimes = sunTimesToday;
         if (sunTimes.sunrise && now > sunTimes.sunrise) {
-            // We're past sunrise, recalculate from perspective of tonight
             sunTimes = sunTimesTomorrow;
         }
 
         renderDarknessInfo(sunTimes, now);
 
-        var enrichedSpots = spotsWithDistance.map(function (spot) {
+        function enrichSpot(spot) {
             var arrivalTime = new Date(now.getTime() + spot.driveMinutes * 60000);
             var cloudData = cloudMap[spot.name] || null;
             var cloudAtArrival = cloudData ? getCloudCoverAtTime(cloudData, arrivalTime) : null;
             var kpAtArrival = getKpAtTime(appState.kpForecast, arrivalTime);
 
-            // Use spot-specific sun times for accuracy
             var spotSunTimes = calcSunTimes(spot.lat, spot.lng, arrivalTime);
             var isDark = isDarkForAurora(spotSunTimes, arrivalTime);
             var hoursRemaining = getHoursOfDarknessRemaining(spotSunTimes, arrivalTime);
@@ -1117,14 +1318,18 @@
                 hoursRemaining: hoursRemaining,
                 score: score
             });
-        });
+        }
 
-        // Step 6: Find best 48-hour forecast windows
-        var bestWindows = findBestWindows(spotsWithDistance, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
+        var enrichedNearby = nearbySpots.map(enrichSpot);
+        var enrichedCurated = curatedWithDistance.map(enrichSpot);
+
+        // Step 6: Find best 48-hour forecast windows (use all spots)
+        var bestWindows = findBestWindows(allSpots, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
         renderForecastWindows(bestWindows);
 
-        // Step 7: Render current spot results
-        renderSpotCards(enrichedSpots);
+        // Step 7: Render nearby dark-sky spots, then curated spots
+        renderNearbySpots(enrichedNearby);
+        renderSpotCards(enrichedCurated);
 
         appState.lastUpdated = now;
         document.getElementById('last-updated').innerHTML =
