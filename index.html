@@ -745,6 +745,27 @@
             color: var(--text-primary);
         }
 
+        .nearby-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .nearby-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .nearby-tag {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+        }
+
         .nearby-details {
             font-size: 13px;
             color: var(--text-secondary);
@@ -811,15 +832,6 @@
                     <option value="9999">Any distance</option>
                 </select>
             </div>
-            <div class="control-group">
-                <div class="control-label">Sort by</div>
-                <select class="control-select" id="sort-by" aria-label="Sort spots by">
-                    <option value="score" selected>Best overall</option>
-                    <option value="kp">Highest Kp</option>
-                    <option value="clouds">Clearest sky</option>
-                    <option value="distance">Closest</option>
-                </select>
-            </div>
             <button class="refresh-btn" id="refresh-btn" aria-label="Refresh data">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="23 4 23 10 17 10"></polyline>
@@ -832,8 +844,7 @@
         <div id="darkness-info"></div>
         <div id="last-updated"></div>
         <div id="forecast-windows"></div>
-        <div id="nearby-container"></div>
-        <div id="spots-container">
+        <div id="nearby-container">
             <div class="loading">
                 <div class="loading-spinner"></div>
                 <p>Finding your location...</p>
@@ -841,8 +852,8 @@
         </div>
 
         <div class="footer">
-            Data: NOAA Space Weather &middot; Open-Meteo &middot; OpenStreetMap<br>
-            Drive times are estimates based on typical Iceland road conditions
+            Data: NOAA Space Weather &middot; Open-Meteo Weather & Elevation &middot; OpenStreetMap<br>
+            Spots chosen for dark skies, flat terrain &amp; low light pollution
         </div>
     </div>
 

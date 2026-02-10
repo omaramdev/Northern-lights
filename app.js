@@ -8,119 +8,6 @@
 (function () {
     'use strict';
 
-    // ---- Curated viewing spots across Iceland ----
-    // These are famous/scenic spots — kept as a secondary "iconic spots" list
-    const CURATED_SPOTS = [
-        {
-            name: 'Thingvellir National Park',
-            lat: 64.2558,
-            lng: -21.1290,
-            desc: 'UNESCO site with wide open skies and minimal light pollution'
-        },
-        {
-            name: 'Grotta Lighthouse',
-            lat: 64.1637,
-            lng: -22.0186,
-            desc: 'Close to Reykjavik with clear northern horizon'
-        },
-        {
-            name: 'Vik Beach',
-            lat: 63.4186,
-            lng: -19.0060,
-            desc: 'Black sand beach with unobstructed views in all directions'
-        },
-        {
-            name: 'Jokulsarlon Glacier Lagoon',
-            lat: 64.0784,
-            lng: -16.2306,
-            desc: 'Aurora reflecting off icebergs — iconic viewing'
-        },
-        {
-            name: 'Kirkjufell, Snaefellsnes',
-            lat: 64.9426,
-            lng: -23.3071,
-            desc: 'Famous mountain with dark skies on the peninsula'
-        },
-        {
-            name: 'Seljalandsfoss',
-            lat: 63.6156,
-            lng: -19.9886,
-            desc: 'Waterfall with aurora backdrop, open farmland views'
-        },
-        {
-            name: 'Skogafoss',
-            lat: 63.5321,
-            lng: -19.5113,
-            desc: 'Powerful waterfall with wide southern sky'
-        },
-        {
-            name: 'Lake Myvatn',
-            lat: 65.6030,
-            lng: -16.9964,
-            desc: 'Remote northern Iceland with exceptional dark skies'
-        },
-        {
-            name: 'Stokksnes / Vestrahorn',
-            lat: 64.2538,
-            lng: -14.9685,
-            desc: 'Dramatic mountain backdrop, very dark skies'
-        },
-        {
-            name: 'Reykjanes Lighthouse',
-            lat: 63.8119,
-            lng: -22.7064,
-            desc: 'Southwest tip of Iceland, wide open ocean horizon'
-        },
-        {
-            name: 'Gullfoss',
-            lat: 64.3271,
-            lng: -20.1199,
-            desc: 'Golden Circle waterfall with dark surroundings at night'
-        },
-        {
-            name: 'Godafoss',
-            lat: 65.6826,
-            lng: -17.5502,
-            desc: 'Waterfall of the Gods in northern Iceland, low light pollution'
-        },
-        {
-            name: 'Dyrholaey',
-            lat: 63.4006,
-            lng: -19.1292,
-            desc: 'Elevated peninsula with 360-degree views, very dark'
-        },
-        {
-            name: 'Kleifarvatn Lake',
-            lat: 63.8841,
-            lng: -21.9936,
-            desc: 'Quiet lake on Reykjanes, short drive from Reykjavik'
-        },
-        {
-            name: 'Hvitserkur',
-            lat: 65.6060,
-            lng: -20.6318,
-            desc: 'Remote rock formation in northwest with pristine darkness'
-        },
-        {
-            name: 'Akureyri Outskirts',
-            lat: 65.7100,
-            lng: -18.1300,
-            desc: 'Capital of the north — drive just outside for dark skies'
-        },
-        {
-            name: 'Geysir Area',
-            lat: 64.3104,
-            lng: -20.3024,
-            desc: 'Golden Circle geothermal area, dark fields at night'
-        },
-        {
-            name: 'Arnarstapi, Snaefellsnes',
-            lat: 64.7667,
-            lng: -23.6250,
-            desc: 'Coastal village on the peninsula, very low light pollution'
-        }
-    ];
-
     // ---- Iceland populated areas (light pollution sources) ----
     // Population-weighted: larger towns emit more light
     const LIGHT_SOURCES = [
@@ -145,20 +32,24 @@
         { name: 'Borgarnes', lat: 64.5383, lng: -21.9200, pop: 2000 }
     ];
 
-    // Compass directions for generating nearby points
+    // Compass directions for generating nearby points (every 30 degrees)
     var DIRECTIONS = [
-        { name: 'N',  bearing: 0 },
-        { name: 'NE', bearing: 45 },
-        { name: 'E',  bearing: 90 },
-        { name: 'SE', bearing: 135 },
-        { name: 'S',  bearing: 180 },
-        { name: 'SW', bearing: 225 },
-        { name: 'W',  bearing: 270 },
-        { name: 'NW', bearing: 315 }
+        { name: 'N',   bearing: 0 },
+        { name: 'NNE', bearing: 30 },
+        { name: 'ENE', bearing: 60 },
+        { name: 'E',   bearing: 90 },
+        { name: 'ESE', bearing: 120 },
+        { name: 'SSE', bearing: 150 },
+        { name: 'S',   bearing: 180 },
+        { name: 'SSW', bearing: 210 },
+        { name: 'WSW', bearing: 240 },
+        { name: 'W',   bearing: 270 },
+        { name: 'WNW', bearing: 300 },
+        { name: 'NNW', bearing: 330 }
     ];
 
     // Distances in km to generate candidate points
-    var NEARBY_DISTANCES = [10, 20, 35];
+    var NEARBY_DISTANCES = [5, 10, 15, 20, 30, 40];
 
     // ---- Kp index interpretation for Iceland's latitude (63-66 N) ----
     // At these latitudes, aurora is visible at lower Kp values
@@ -293,6 +184,115 @@
             });
         });
         return Promise.all(promises);
+    }
+
+    // ============================================================
+    // ELEVATION / TERRAIN FLATNESS (Open-Meteo Elevation API)
+    // ============================================================
+
+    async function fetchElevationBatch(lats, lngs) {
+        // Open-Meteo Elevation API: free, no key, CORS-enabled, batch support
+        try {
+            var url = 'https://api.open-meteo.com/v1/elevation'
+                + '?latitude=' + lats.map(function (l) { return l.toFixed(4); }).join(',')
+                + '&longitude=' + lngs.map(function (l) { return l.toFixed(4); }).join(',');
+
+            var res = await fetch(url);
+            if (!res.ok) return null;
+            var data = await res.json();
+            return data.elevation; // array of elevations in meters
+        } catch (e) {
+            console.warn('Elevation API error:', e);
+            return null;
+        }
+    }
+
+    async function enrichWithTerrain(candidates) {
+        // For each candidate, sample 5 points: center + 4 cardinal directions at ~1km
+        // Low elevation variance = flat & open terrain (ideal for aurora viewing)
+        var probeDist = 1; // km
+        var allLats = [];
+        var allLngs = [];
+
+        for (var i = 0; i < candidates.length; i++) {
+            var c = candidates[i];
+            // Center point
+            allLats.push(c.lat);
+            allLngs.push(c.lng);
+            // North probe
+            var pN = pointAtBearing(c.lat, c.lng, 0, probeDist);
+            allLats.push(pN.lat); allLngs.push(pN.lng);
+            // East probe
+            var pE = pointAtBearing(c.lat, c.lng, 90, probeDist);
+            allLats.push(pE.lat); allLngs.push(pE.lng);
+            // South probe
+            var pS = pointAtBearing(c.lat, c.lng, 180, probeDist);
+            allLats.push(pS.lat); allLngs.push(pS.lng);
+            // West probe
+            var pW = pointAtBearing(c.lat, c.lng, 270, probeDist);
+            allLats.push(pW.lat); allLngs.push(pW.lng);
+        }
+
+        // Batch API calls in chunks of 100 (API limit per request)
+        var CHUNK = 100;
+        var allElev = [];
+
+        for (var start = 0; start < allLats.length; start += CHUNK) {
+            var cLats = allLats.slice(start, start + CHUNK);
+            var cLngs = allLngs.slice(start, start + CHUNK);
+            var elevations = await fetchElevationBatch(cLats, cLngs);
+            if (elevations) {
+                allElev = allElev.concat(elevations);
+            } else {
+                for (var j = 0; j < cLats.length; j++) allElev.push(null);
+            }
+        }
+
+        // Calculate flatness for each candidate (5 probes per candidate)
+        for (var i = 0; i < candidates.length; i++) {
+            var base = i * 5;
+            var probes = allElev.slice(base, base + 5);
+
+            if (probes.some(function (p) { return p === null || p === undefined; })) {
+                candidates[i].flatness = null;
+                candidates[i].terrainLabel = 'Unknown';
+                candidates[i].elevationCenter = null;
+                continue;
+            }
+
+            // Standard deviation of elevation across 5 points = terrain roughness
+            var mean = 0;
+            for (var j = 0; j < probes.length; j++) mean += probes[j];
+            mean /= probes.length;
+
+            var variance = 0;
+            for (var j = 0; j < probes.length; j++) {
+                variance += (probes[j] - mean) * (probes[j] - mean);
+            }
+            variance /= probes.length;
+            var stdDev = Math.sqrt(variance);
+
+            candidates[i].elevationCenter = Math.round(probes[0]);
+            candidates[i].elevationStdDev = stdDev;
+
+            // Flatness score: 0-100 where 100 = perfectly flat
+            if (stdDev <= 5) {
+                candidates[i].flatness = 100;
+                candidates[i].terrainLabel = 'Very flat & open';
+            } else if (stdDev <= 15) {
+                candidates[i].flatness = 80;
+                candidates[i].terrainLabel = 'Flat terrain';
+            } else if (stdDev <= 30) {
+                candidates[i].flatness = 55;
+                candidates[i].terrainLabel = 'Gently rolling';
+            } else if (stdDev <= 60) {
+                candidates[i].flatness = 30;
+                candidates[i].terrainLabel = 'Hilly';
+            } else {
+                candidates[i].flatness = 10;
+                candidates[i].terrainLabel = 'Mountainous';
+            }
+        }
     }
 
     // ============================================================
@@ -535,8 +535,8 @@
         return Math.min(100, totalLight);
     }
 
-    function generateNearbySpots(userLat, userLng) {
-        // Generate candidate dark-sky points around the user
+    function generateNearbyCandidates(userLat, userLng) {
+        // Generate candidate points in 12 directions x 6 distances = 72 candidates
         var candidates = [];
 
         for (var d = 0; d < NEARBY_DISTANCES.length; d++) {
@@ -561,21 +561,36 @@
             }
         }
 
-        // Filter out spots that are too close to towns (light pollution > 15)
-        // and keep the best per direction (darkest)
+        return candidates;
+    }
+
+    function filterAndRankCandidates(candidates) {
+        // Filter: must be dark (low light pollution) and reasonably flat
+        var filtered = candidates.filter(function (c) {
+            if (c.lightPollution > 15) return false; // too close to towns
+            if (c.flatness !== null && c.flatness < 30) return false; // too hilly
+            return true;
+        });
+
+        // Compute a site quality score combining darkness and flatness
+        filtered.forEach(function (c) {
+            var darknessScore = Math.max(0, 100 - c.lightPollution * 6.67); // 0-100
+            var flatScore = c.flatness !== null ? c.flatness : 50; // default moderate
+            c.siteQuality = darknessScore * 0.6 + flatScore * 0.4;
+        });
+
+        // Sort by site quality and keep the best per direction
+        filtered.sort(function (a, b) { return b.siteQuality - a.siteQuality; });
+
         var bestPerDirection = {};
-        candidates.forEach(function (c) {
-            if (c.lightPollution > 15) return; // skip bright areas
-            var key = c.direction;
-            if (!bestPerDirection[key] || c.lightPollution < bestPerDirection[key].lightPollution) {
-                bestPerDirection[key] = c;
+        filtered.forEach(function (c) {
+            if (!bestPerDirection[c.direction] || c.siteQuality > bestPerDirection[c.direction].siteQuality) {
+                bestPerDirection[c.direction] = c;
             }
         });
 
         var result = Object.values(bestPerDirection);
-
-        // Sort by light pollution (darkest first)
-        result.sort(function (a, b) { return a.lightPollution - b.lightPollution; });
+        result.sort(function (a, b) { return b.siteQuality - a.siteQuality; });
 
         return result;
     }
@@ -673,6 +688,12 @@
         else if (driveMinutes <= 30) score += 8;
         else if (driveMinutes <= 60) score += 5;
         else if (driveMinutes <= 90) score += 3;
+
+        // Flat terrain bonus (0-5 points)
+        if (spot.flatness !== null && spot.flatness !== undefined) {
+            if (spot.flatness >= 80) score += 5;
+            else if (spot.flatness >= 50) score += 3;
+        }
 
         return Math.min(100, Math.max(0, score));
     }
@@ -929,14 +950,20 @@
         // Sort by score descending
         var sorted = spots.slice().sort(function (a, b) { return b.score - a.score; });
 
+        // Apply max drive filter
+        var maxDrive = parseInt(document.getElementById('max-drive-time').value, 10);
+        sorted = sorted.filter(function (s) { return s.driveMinutes <= maxDrive; });
+
         if (sorted.length === 0) {
-            container.innerHTML = '<div class="section-label">Nearby dark-sky spots</div>'
-                + '<div class="no-spots-message">No dark-sky spots generated — you may be too close to a town in all directions.</div>';
+            container.innerHTML = '<div class="section-label">Dark-sky viewing spots</div>'
+                + '<div class="no-spots-message">No suitable spots found within your drive time. '
+                + 'Try increasing the max drive distance.</div>';
             return;
         }
 
-        var html = '<div class="section-label">Nearby dark-sky spots</div>'
-            + '<div class="nearby-hint">Dark spots near you based on distance from town lights and cloud cover</div>'
+        var locLabel = appState.addressName ? ' near ' + appState.addressName.split(',')[0] : ' near you';
+        var html = '<div class="section-label">Dark-sky viewing spots' + locLabel + ' (' + sorted.length + ' found)</div>'
+            + '<div class="nearby-hint">Flat, dark locations away from town lights — ranked by viewing conditions</div>'
             + '<div class="nearby-list">';
 
         for (var i = 0; i < sorted.length; i++) {
@@ -953,26 +980,57 @@
             var darkLabel = s.lightPollution < 3 ? 'Very dark' : s.lightPollution < 8 ? 'Dark' : 'Moderate';
             var darkColor = s.lightPollution < 3 ? 'var(--accent)' : s.lightPollution < 8 ? '#66f0a8' : 'var(--warning)';
 
+            var terrainLabel = s.terrainLabel || 'Unknown';
+            var terrainColor = s.flatness >= 80 ? 'var(--accent)' : s.flatness >= 50 ? '#66f0a8' : 'var(--warning)';
+            var elevLabel = s.elevationCenter !== null ? (s.elevationCenter + 'm elev') : '';
+
             var badgeClass, badgeText;
             if (s.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
             else if (s.score >= 55) { badgeClass = 'badge-good'; badgeText = 'Good'; }
             else if (s.score >= 35) { badgeClass = 'badge-fair'; badgeText = 'Fair'; }
             else { badgeClass = 'badge-poor'; badgeText = 'Poor'; }
 
+            // Verdict text based on conditions
+            var verdictClass, verdictText;
+            var overcast = s.cloudAtArrival !== null && s.cloudAtArrival >= 90;
+            var heavyClouds = s.cloudAtArrival !== null && s.cloudAtArrival >= 70;
+
+            if (!s.isDarkAtArrival) {
+                verdictClass = 'verdict-negative';
+                verdictText = 'Sky won\'t be dark enough when you arrive';
+            } else if (overcast) {
+                verdictClass = 'verdict-negative';
+                verdictText = 'Overcast — clouds will block the view';
+            } else if (heavyClouds) {
+                verdictClass = 'verdict-negative';
+                verdictText = 'Heavy cloud cover — very unlikely to see aurora';
+            } else if (s.score >= 55) {
+                verdictClass = 'verdict-positive';
+                verdictText = 'Aurora likely visible — ' + s.hoursRemaining.toFixed(1) + ' hrs of darkness left';
+            } else if (s.score >= 35) {
+                verdictClass = 'verdict-caution';
+                verdictText = 'Possible viewing — conditions are marginal';
+            } else {
+                verdictClass = 'verdict-negative';
+                verdictText = 'Low chance right now';
+            }
+
             html += '<div class="nearby-card' + (i === 0 ? ' top-pick' : '') + '">'
                 + '<div class="nearby-card-header">'
-                + '  <div class="nearby-direction">' + s.name + '</div>'
+                + '  <div>'
+                + '    <div class="nearby-direction">' + s.name + '</div>'
+                + '    <div class="nearby-subtitle">~' + s.driveMinutes + ' min drive &middot; ' + s.distanceKm.toFixed(0) + ' km away</div>'
+                + '  </div>'
                 + '  <span class="spot-badge ' + badgeClass + '">' + badgeText + '</span>'
                 + '</div>'
-                + '<div class="nearby-details">'
-                + '  <span>~' + s.driveMinutes + ' min drive</span>'
-                + '  <span class="forecast-sep">&middot;</span>'
-                + '  <span style="color:' + darkColor + '">' + darkLabel + '</span>'
-                + '  <span class="forecast-sep">&middot;</span>'
-                + '  <span style="color:' + clearColor + '">' + clearLabel + '</span>'
-                + '  <span class="forecast-sep">&middot;</span>'
-                + '  <span style="color:' + kpInfo.color + '">Kp ' + s.kpAtArrival.toFixed(1) + '</span>'
+                + '<div class="nearby-tags">'
+                + '  <span class="nearby-tag" style="color:' + darkColor + '">' + darkLabel + '</span>'
+                + '  <span class="nearby-tag" style="color:' + terrainColor + '">' + terrainLabel + '</span>'
+                + '  <span class="nearby-tag" style="color:' + clearColor + '">' + clearLabel + '</span>'
+                + '  <span class="nearby-tag" style="color:' + kpInfo.color + '">Kp ' + s.kpAtArrival.toFixed(1) + '</span>'
+                + (elevLabel ? '  <span class="nearby-tag">' + elevLabel + '</span>' : '')
                 + '</div>'
+                + '<div class="spot-verdict ' + verdictClass + '">' + verdictText + '</div>'
                 + '<button class="navigate-btn nearby-nav-btn" data-lat="' + s.lat + '" data-lng="' + s.lng + '" data-name="' + s.name + '">'
                 + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
                 + '<polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>'
@@ -996,161 +1054,6 @@
         });
     }
 
-    function renderSpotCards(spots) {
-        var container = document.getElementById('spots-container');
-        var maxDrive = parseInt(document.getElementById('max-drive-time').value, 10);
-
-        var filtered = spots.filter(function (s) { return s.driveMinutes <= maxDrive; });
-
-        // Sort based on user selection
-        var sortBy = document.getElementById('sort-by').value;
-        switch (sortBy) {
-            case 'kp':
-                filtered.sort(function (a, b) { return b.kpAtArrival - a.kpAtArrival || b.score - a.score; });
-                break;
-            case 'clouds':
-                filtered.sort(function (a, b) {
-                    var aCloud = a.cloudAtArrival !== null ? a.cloudAtArrival : 100;
-                    var bCloud = b.cloudAtArrival !== null ? b.cloudAtArrival : 100;
-                    return aCloud - bCloud || b.score - a.score;
-                });
-                break;
-            case 'distance':
-                filtered.sort(function (a, b) { return a.driveMinutes - b.driveMinutes || b.score - a.score; });
-                break;
-            default:
-                filtered.sort(function (a, b) { return b.score - a.score; });
-        }
-
-        if (filtered.length === 0) {
-            container.innerHTML = '<div class="no-spots-message">'
-                + 'No viewing spots within your max drive time. Try increasing the distance.'
-                + '</div>';
-            return;
-        }
-
-        var nearLabel = appState.addressName ? 'Iconic spots near ' + appState.addressName.split(',')[0] : 'Iconic viewing spots';
-        var html = '<div class="section-label">' + nearLabel + ' (' + filtered.length + ' found)</div>'
-            + '<div class="spots-list">';
-
-        for (var i = 0; i < filtered.length; i++) {
-            html += renderOneSpot(filtered[i], i === 0);
-        }
-
-        html += '</div>';
-        container.innerHTML = html;
-
-        // Attach navigation click handlers
-        var navBtns = container.querySelectorAll('.navigate-btn');
-        navBtns.forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var lat = parseFloat(btn.dataset.lat);
-                var lng = parseFloat(btn.dataset.lng);
-                var name = btn.dataset.name;
-                openNavigation(lat, lng, name);
-            });
-        });
-    }
-
-    function renderOneSpot(spot, isTopPick) {
-        var badgeClass, badgeText;
-        if (spot.score >= 70) { badgeClass = 'badge-great'; badgeText = 'Great'; }
-        else if (spot.score >= 55) { badgeClass = 'badge-good'; badgeText = 'Good'; }
-        else if (spot.score >= 35) { badgeClass = 'badge-fair'; badgeText = 'Fair'; }
-        else { badgeClass = 'badge-poor'; badgeText = 'Poor'; }
-
-        // Kp bar
-        var kpPct = Math.min(100, (spot.kpAtArrival / 9) * 100);
-        var kpInfo = getKpInfo(spot.kpAtArrival);
-
-        // Cloud bar (inverted: lower cloud = better = more green)
-        var cloudKnown = spot.cloudAtArrival !== null;
-        var clearPct, cloudColor, cloudLabel;
-        if (cloudKnown) {
-            clearPct = 100 - spot.cloudAtArrival;
-            cloudColor = clearPct >= 70 ? 'var(--bar-fill-good)' : clearPct >= 40 ? 'var(--bar-fill-ok)' : 'var(--bar-fill-bad)';
-            cloudLabel = clearPct + '%';
-        } else {
-            clearPct = 0;
-            cloudColor = 'var(--text-secondary)';
-            cloudLabel = 'No data';
-        }
-
-        // Darkness bar
-        var darkPct = Math.min(100, (spot.hoursRemaining / 8) * 100);
-        var darkColor = spot.hoursRemaining >= 3 ? 'var(--bar-fill-good)' : spot.hoursRemaining >= 1 ? 'var(--bar-fill-ok)' : 'var(--bar-fill-bad)';
-
-        // Verdict — cloud cover is the #1 gatekeeper
-        var verdictClass, verdictText;
-        var overcast = spot.cloudAtArrival !== null && spot.cloudAtArrival >= 90;
-        var heavyClouds = spot.cloudAtArrival !== null && spot.cloudAtArrival >= 70;
-
-        if (!spot.isDarkAtArrival) {
-            verdictClass = 'verdict-negative';
-            verdictText = 'Sky won\'t be dark enough when you arrive';
-        } else if (overcast) {
-            verdictClass = 'verdict-negative';
-            verdictText = 'Overcast — clouds will block the view (' + spot.cloudAtArrival + '% cloud cover)';
-        } else if (heavyClouds) {
-            verdictClass = 'verdict-negative';
-            verdictText = 'Heavy cloud cover (' + spot.cloudAtArrival + '%) — very unlikely to see aurora';
-        } else if (spot.cloudAtArrival !== null && spot.cloudAtArrival >= 50) {
-            verdictClass = 'verdict-caution';
-            verdictText = 'Partly cloudy (' + spot.cloudAtArrival + '%) — may get glimpses between gaps';
-        } else if (spot.score >= 55) {
-            verdictClass = 'verdict-positive';
-            verdictText = 'Aurora likely visible when you arrive — '
-                + spot.hoursRemaining.toFixed(1) + ' hrs of darkness remaining';
-        } else if (spot.score >= 35) {
-            verdictClass = 'verdict-caution';
-            var reasons = [];
-            if (spot.kpAtArrival < 2) reasons.push('low aurora activity');
-            if (spot.hoursRemaining < 2) reasons.push('limited darkness remaining');
-            verdictText = 'Possible viewing' + (reasons.length > 0 ? ' — ' + reasons.join(', ') : '');
-        } else {
-            verdictClass = 'verdict-negative';
-            var badReasons = [];
-            if (spot.kpAtArrival < 2) badReasons.push('weak aurora activity');
-            if (spot.hoursRemaining < 1) badReasons.push('almost sunrise');
-            verdictText = 'Low chance' + (badReasons.length > 0 ? ' — ' + badReasons.join(', ') : '');
-        }
-
-        var arrivalStr = formatTime(spot.arrivalTime);
-
-        return '<div class="spot-card' + (isTopPick ? ' top-pick' : '') + '">'
-            + '<div class="spot-card-header">'
-            + '  <div>'
-            + '    <div class="spot-name">' + spot.name + '</div>'
-            + '    <div class="spot-distance">'
-            + spot.distanceKm.toFixed(0) + ' km away &middot; ~' + spot.driveMinutes + ' min drive'
-            + ' &middot; Arrive ' + arrivalStr
-            + '    </div>'
-            + '  </div>'
-            + '  <span class="spot-badge ' + badgeClass + '">' + badgeText + '</span>'
-            + '</div>'
-            + '<div class="spot-factors">'
-            + renderFactor('Aurora', kpPct, kpInfo.color, 'Kp ' + spot.kpAtArrival.toFixed(1))
-            + renderFactor('Clear sky', clearPct, cloudColor, cloudLabel === 'N/A' ? cloudLabel : (clearPct + '%'))
-            + renderFactor('Darkness', darkPct, darkColor, spot.hoursRemaining.toFixed(1) + ' hrs')
-            + '</div>'
-            + '<div class="spot-verdict ' + verdictClass + '">' + verdictText + '</div>'
-            + '<button class="navigate-btn" data-lat="' + spot.lat + '" data-lng="' + spot.lng + '" data-name="' + spot.name + '">'
-            + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
-            + '<polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>'
-            + 'Navigate to ' + spot.name
-            + '</button>'
-            + '</div>';
-    }
-
-    function renderFactor(label, pct, color, value) {
-        return '<div class="factor-row">'
-            + '<span class="factor-label">' + label + '</span>'
-            + '<div class="factor-bar-container">'
-            + '  <div class="factor-bar" style="width:' + pct + '%;background:' + color + '"></div>'
-            + '</div>'
-            + '<span class="factor-value" style="color:' + color + '">' + value + '</span>'
-            + '</div>';
-    }
 
     function openNavigation(lat, lng, name) {
         // Detect iOS for Apple Maps, otherwise Google Maps
@@ -1171,7 +1074,7 @@
     }
 
     function showLoading(message) {
-        document.getElementById('spots-container').innerHTML =
+        document.getElementById('nearby-container').innerHTML =
             '<div class="loading"><div class="loading-spinner"></div><p>' + message + '</p></div>';
     }
 
@@ -1181,7 +1084,7 @@
             html += '<button class="action-btn" onclick="location.reload()">Try again</button>';
         }
         html += '</div>';
-        document.getElementById('spots-container').innerHTML = html;
+        document.getElementById('nearby-container').innerHTML = html;
     }
 
     // ============================================================
@@ -1254,37 +1157,27 @@
 
         renderAuroraStatus(appState.kpCurrent, appState.kpForecast);
 
-        // Step 3: Generate nearby dark-sky candidate spots + curated spots
+        // Step 3: Generate candidate dark-sky points (12 directions x 6 distances)
         var now = new Date();
-        var maxDrive = parseInt(document.getElementById('max-drive-time').value, 10);
+        showLoading('Scanning for dark, flat locations...');
+        var candidates = generateNearbyCandidates(appState.userLat, appState.userLng);
 
-        // Generate nearby dark-sky points based on user's actual location
-        var nearbySpots = generateNearbySpots(appState.userLat, appState.userLng);
+        // Step 4: Fetch terrain elevation data for all candidates
+        showLoading('Checking terrain at ' + candidates.length + ' locations...');
+        await enrichWithTerrain(candidates);
 
-        // Calculate distances for curated spots
-        var curatedWithDistance = CURATED_SPOTS.map(function (spot) {
-            var dist = haversineDistance(appState.userLat, appState.userLng, spot.lat, spot.lng);
-            var driveMin = estimateDriveMinutes(dist);
-            return Object.assign({}, spot, {
-                distanceKm: dist,
-                driveMinutes: driveMin,
-                isNearby: false
-            });
-        });
+        // Step 5: Filter to dark, flat spots
+        var nearbySpots = filterAndRankCandidates(candidates);
 
-        // Combine both lists for cloud cover fetching
-        var allSpots = nearbySpots.concat(curatedWithDistance);
-
-        showLoading('Checking cloud cover at ' + allSpots.length + ' locations...');
-
-        // Step 4: Fetch cloud cover for all spots
-        var cloudResults = await fetchCloudCoverForSpots(allSpots);
+        // Step 6: Fetch cloud cover for filtered spots only
+        showLoading('Checking cloud cover at ' + nearbySpots.length + ' locations...');
+        var cloudResults = await fetchCloudCoverForSpots(nearbySpots);
         var cloudMap = {};
         cloudResults.forEach(function (r) {
             cloudMap[r.spot.name] = r.cloudData;
         });
 
-        // Step 5: Calculate sun times and visibility scores
+        // Step 7: Calculate sun times and darkness info
         var sunTimesToday = calcSunTimes(appState.userLat, appState.userLng, now);
 
         var tomorrow = new Date(now);
@@ -1298,6 +1191,7 @@
 
         renderDarknessInfo(sunTimes, now);
 
+        // Step 8: Enrich spots with viewing condition scores
         function enrichSpot(spot) {
             var arrivalTime = new Date(now.getTime() + spot.driveMinutes * 60000);
             var cloudData = cloudMap[spot.name] || null;
@@ -1321,15 +1215,13 @@
         }
 
         var enrichedNearby = nearbySpots.map(enrichSpot);
-        var enrichedCurated = curatedWithDistance.map(enrichSpot);
 
-        // Step 6: Find best 48-hour forecast windows (use all spots)
-        var bestWindows = findBestWindows(allSpots, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
+        // Step 9: Find best 48-hour forecast windows
+        var bestWindows = findBestWindows(nearbySpots, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
         renderForecastWindows(bestWindows);
 
-        // Step 7: Render nearby dark-sky spots, then curated spots
+        // Step 10: Render results
         renderNearbySpots(enrichedNearby);
-        renderSpotCards(enrichedCurated);
 
         appState.lastUpdated = now;
         document.getElementById('last-updated').innerHTML =
@@ -1350,11 +1242,6 @@
         }
     });
 
-    document.getElementById('sort-by').addEventListener('change', function () {
-        if (appState.lastUpdated) {
-            loadData();
-        }
-    });
 
     // ---- Location picker ----
     var gpsBtn = document.getElementById('loc-gps-btn');
