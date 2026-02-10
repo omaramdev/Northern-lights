@@ -596,8 +596,25 @@
 
         var filtered = spots.filter(function (s) { return s.driveMinutes <= maxDrive; });
 
-        // Sort by score descending
-        filtered.sort(function (a, b) { return b.score - a.score; });
+        // Sort based on user selection
+        var sortBy = document.getElementById('sort-by').value;
+        switch (sortBy) {
+            case 'kp':
+                filtered.sort(function (a, b) { return b.kpAtArrival - a.kpAtArrival || b.score - a.score; });
+                break;
+            case 'clouds':
+                filtered.sort(function (a, b) {
+                    var aCloud = a.cloudAtArrival !== null ? a.cloudAtArrival : 100;
+                    var bCloud = b.cloudAtArrival !== null ? b.cloudAtArrival : 100;
+                    return aCloud - bCloud || b.score - a.score;
+                });
+                break;
+            case 'distance':
+                filtered.sort(function (a, b) { return a.driveMinutes - b.driveMinutes || b.score - a.score; });
+                break;
+            default:
+                filtered.sort(function (a, b) { return b.score - a.score; });
+        }
 
         if (filtered.length === 0) {
             container.innerHTML = '<div class="no-spots-message">'
@@ -866,6 +883,12 @@
 
     document.getElementById('max-drive-time').addEventListener('change', function () {
         // Re-render with new filter without re-fetching
+        if (appState.lastUpdated) {
+            loadData();
+        }
+    });
+
+    document.getElementById('sort-by').addEventListener('change', function () {
         if (appState.lastUpdated) {
             loadData();
         }
