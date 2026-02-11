@@ -565,8 +565,9 @@
     }
 
     function filterAndRankCandidates(candidates) {
-        // Filter: must be dark (low light pollution) and reasonably flat
+        // Filter: must be on land, dark, and reasonably flat
         var filtered = candidates.filter(function (c) {
+            if (c.elevationCenter !== null && c.elevationCenter <= 0) return false; // in the ocean
             if (c.lightPollution > 15) return false; // too close to towns
             if (c.flatness !== null && c.flatness < 30) return false; // too hilly
             return true;
@@ -604,6 +605,7 @@
         if (!forecast || forecast.length === 0) return appState.kpCurrent || 0;
 
         var target = targetTime.getTime();
+        var now = Date.now();
         var closest = forecast[0];
         var closestDiff = Math.abs(forecast[0].time.getTime() - target);
 
@@ -614,6 +616,15 @@
                 closestDiff = diff;
             }
         }
+
+        // For arrivals within the next ~3 hours, use the real-time observed Kp
+        // if it's higher than the forecast — the observation is more accurate
+        // than the prediction for the near term
+        var hoursFromNow = (target - now) / 3600000;
+        if (hoursFromNow < 3 && appState.kpCurrent !== null) {
+            return Math.max(closest.kp, appState.kpCurrent);
+        }
+
         return closest.kp;
     }
 
@@ -825,40 +836,47 @@
         return upcoming.slice(0, count);
     }
 
-    function renderDarknessInfo(sunTimes, now) {
+    function renderDarknessInfo(sunTimesToday, sunTimesTomorrow, now) {
         var container = document.getElementById('darkness-info');
 
-        if (sunTimes.midnightSun) {
+        if (sunTimesToday.midnightSun) {
             container.innerHTML = '<div class="darkness-info error-text">'
                 + 'It\'s midnight sun season — the sky won\'t get dark enough for aurora viewing.'
                 + '</div>';
             return;
         }
 
-        if (sunTimes.polarNight) {
+        if (sunTimesToday.polarNight) {
             container.innerHTML = '<div class="darkness-info">'
                 + 'Polar night — dark all day. Perfect conditions for aurora viewing.'
                 + '</div>';
             return;
         }
 
-        var dark = isDarkForAurora(sunTimes, now);
-        var hoursLeft = getHoursOfDarknessRemaining(sunTimes, now);
+        // Always check "is it dark RIGHT NOW?" using today's sun times
+        var darkNow = isDarkForAurora(sunTimesToday, now);
 
-        if (dark) {
-            var endTime = sunTimes.astroTwilightEnd || sunTimes.sunrise;
+        if (darkNow) {
+            var hoursLeft = getHoursOfDarknessRemaining(sunTimesToday, now);
+            var endTime = sunTimesToday.astroTwilightEnd || sunTimesToday.sunrise;
             var endStr = formatTime(endTime);
             container.innerHTML = '<div class="darkness-info">'
                 + 'Sky is <strong style="color:var(--accent)">dark enough</strong> for aurora viewing. '
                 + 'Darkness until <strong>' + endStr + '</strong> (~' + hoursLeft.toFixed(1) + ' hrs remaining)'
                 + '</div>';
         } else {
-            var startTime = sunTimes.astroTwilightStart || sunTimes.sunset;
-            if (startTime && startTime.getTime() > now.getTime()) {
-                var startStr = formatTime(startTime);
+            // Find when darkness will NEXT begin
+            var nextDarkStart = sunTimesToday.astroTwilightStart || sunTimesToday.sunset;
+            // If today's dark start already passed, use tomorrow's
+            if (!nextDarkStart || nextDarkStart.getTime() <= now.getTime()) {
+                nextDarkStart = sunTimesTomorrow.astroTwilightStart || sunTimesTomorrow.sunset;
+            }
+            if (nextDarkStart && nextDarkStart.getTime() > now.getTime()) {
+                var startStr = formatTime(nextDarkStart);
+                var hoursUntil = ((nextDarkStart.getTime() - now.getTime()) / 3600000).toFixed(1);
                 container.innerHTML = '<div class="darkness-info">'
-                    + 'Sky is <strong style="color:var(--warning)">not yet dark enough</strong>. '
-                    + 'Darkness begins at <strong>' + startStr + '</strong>'
+                    + 'Sky is <strong style="color:var(--warning)">not dark enough</strong> right now. '
+                    + 'Darkness begins at <strong>' + startStr + '</strong> (~' + hoursUntil + ' hrs from now)'
                     + '</div>';
             } else {
                 container.innerHTML = '<div class="darkness-info error-text">'
@@ -1202,12 +1220,7 @@
         tomorrow.setDate(tomorrow.getDate() + 1);
         var sunTimesTomorrow = calcSunTimes(appState.userLat, appState.userLng, tomorrow);
 
-        var sunTimes = sunTimesToday;
-        if (sunTimes.sunrise && now > sunTimes.sunrise) {
-            sunTimes = sunTimesTomorrow;
-        }
-
-        renderDarknessInfo(sunTimes, now);
+        renderDarknessInfo(sunTimesToday, sunTimesTomorrow, now);
 
         // Step 8: Enrich spots with viewing condition scores
         function enrichSpot(spot) {
@@ -1260,6 +1273,26 @@
         }
     });
 
+
+    // ---- Glossary modal ----
+    var glossaryBtn = document.getElementById('glossary-btn');
+    var glossaryOverlay = document.getElementById('glossary-overlay');
+    var glossaryModal = document.getElementById('glossary-modal');
+    var glossaryClose = document.getElementById('glossary-close');
+
+    function openGlossary() {
+        glossaryOverlay.classList.add('open');
+        glossaryModal.classList.add('open');
+    }
+
+    function closeGlossary() {
+        glossaryOverlay.classList.remove('open');
+        glossaryModal.classList.remove('open');
+    }
+
+    glossaryBtn.addEventListener('click', openGlossary);
+    glossaryClose.addEventListener('click', closeGlossary);
+    glossaryOverlay.addEventListener('click', closeGlossary);
 
     // ---- Location picker ----
     var gpsBtn = document.getElementById('loc-gps-btn');

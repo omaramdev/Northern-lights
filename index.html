@@ -68,6 +68,114 @@
             margin-top: 4px;
         }
 
+        .glossary-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .glossary-btn:active {
+            border-color: var(--accent-dim);
+            color: var(--text-primary);
+        }
+
+        .glossary-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 200;
+        }
+
+        .glossary-overlay.open {
+            display: block;
+        }
+
+        .glossary-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: calc(100% - 32px);
+            max-width: 440px;
+            max-height: 80vh;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            z-index: 201;
+            overflow: hidden;
+        }
+
+        .glossary-modal.open {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .glossary-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--card-border);
+            flex-shrink: 0;
+        }
+
+        .glossary-modal-title {
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        .glossary-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0 4px;
+            line-height: 1;
+        }
+
+        .glossary-modal-body {
+            padding: 16px 20px;
+            overflow-y: auto;
+        }
+
+        .glossary-term {
+            margin-bottom: 16px;
+        }
+
+        .glossary-term:last-child {
+            margin-bottom: 0;
+        }
+
+        .glossary-term-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+
+        .glossary-term-def {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .glossary-term-def strong {
+            color: var(--text-primary);
+        }
+
         /* ---- Aurora Status Banner ---- */
         .aurora-status {
             background: var(--card-bg);
@@ -805,7 +913,53 @@
         <header class="header">
             <h1>Northern Lights <span>Finder</span></h1>
             <p>Find the best aurora viewing near you in Iceland</p>
+            <button class="glossary-btn" id="glossary-btn" aria-label="Glossary of terms">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                Terms
+            </button>
         </header>
+
+        <div class="glossary-overlay" id="glossary-overlay"></div>
+        <div class="glossary-modal" id="glossary-modal">
+            <div class="glossary-modal-header">
+                <div class="glossary-modal-title">Glossary of Terms</div>
+                <button class="glossary-close" id="glossary-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="glossary-modal-body">
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Kp Index</div>
+                    <div class="glossary-term-def">A 0-9 scale measuring geomagnetic activity caused by solar wind. Higher Kp = stronger aurora. In Iceland (latitude ~64-66), Kp 2+ is often visible to the naked eye. Kp 5+ is a geomagnetic storm with vivid, dancing aurora.</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Clear Sky / % Clear</div>
+                    <div class="glossary-term-def">The percentage of sky free from clouds. 100% clear = no clouds at all. You need mostly clear skies (70%+) to see the aurora. Even strong aurora is invisible behind clouds.</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Darkness</div>
+                    <div class="glossary-term-def">Aurora is only visible when the sky is dark — after astronomical twilight (sun more than 12 degrees below the horizon). In Iceland, winter nights are long and ideal; summer has midnight sun with no aurora viewing.</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Light Pollution</div>
+                    <div class="glossary-term-def">Artificial light from towns and cities that washes out the night sky. This app finds spots far from populated areas so the sky is as dark as possible. Labels: "Very dark" (best), "Dark" (good), "Moderate" (OK).</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Flat Terrain</div>
+                    <div class="glossary-term-def">Flat, open land gives you a wide view of the sky in all directions, so you can see aurora even on the horizon. The app checks elevation data to find spots without mountains or hills blocking your view.</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Elevation</div>
+                    <div class="glossary-term-def">Height above sea level in meters. Shown to help you understand the terrain. Higher spots aren't necessarily better — flat and dark matters more than altitude for aurora viewing.</div>
+                </div>
+                <div class="glossary-term">
+                    <div class="glossary-term-name">Score Badges</div>
+                    <div class="glossary-term-def"><strong>Great</strong> = excellent conditions, go now. <strong>Good</strong> = solid chance of seeing aurora. <strong>Fair</strong> = possible but conditions are marginal. <strong>Not visible</strong> = impossible right now (daytime or total cloud cover).</div>
+                </div>
+            </div>
+        </div>
 
         <div id="aurora-status"></div>
 
