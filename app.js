@@ -1171,15 +1171,29 @@
                 document.getElementById('location-status').innerHTML = '';
             } catch (err) {
                 refreshBtn.classList.remove('spinning');
-                var msg = 'Location access is needed to find spots near you.';
+
+                // Auto-switch to address mode so the user isn't stuck
+                var gpsBtnEl = document.getElementById('loc-gps-btn');
+                var addrBtnEl = document.getElementById('loc-address-btn');
+                var addrRowEl = document.getElementById('location-address-row');
+                addrBtnEl.classList.add('active');
+                gpsBtnEl.classList.remove('active');
+                addrRowEl.style.display = 'flex';
+                appState.locationMode = 'address';
+
+                var msg;
                 if (err.code === 1) {
-                    msg = 'Location permission denied. Please enable location access in your browser settings and reload.';
+                    msg = 'GPS permission denied — enter your location below instead.';
                 } else if (err.code === 2) {
-                    msg = 'Could not determine your location. Make sure GPS is enabled.';
+                    msg = 'Could not get GPS position — enter your location below instead.';
                 } else if (err.code === 3) {
-                    msg = 'Location request timed out. Please check your connection and try again.';
+                    msg = 'GPS timed out — enter your location below instead.';
+                } else {
+                    msg = 'GPS unavailable — enter your location below instead.';
                 }
-                showError(msg, true);
+                document.getElementById('location-status').innerHTML = '<span class="loc-error">' + msg + '</span>';
+                document.getElementById('location-input').focus();
+                showError(msg, false);
                 return;
             }
         }
