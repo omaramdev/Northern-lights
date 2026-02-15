@@ -871,11 +871,23 @@
             return;
         }
 
-        // Always check "is it dark RIGHT NOW?" using today's sun times
+        // Check "is it dark RIGHT NOW?" using today's sun times
+        // Also compute hours remaining — if dark=true but hours≈0, it's a calculation edge case
         var darkNow = isDarkForAurora(sunTimesToday, now);
+        var hoursLeft = darkNow ? getHoursOfDarknessRemaining(sunTimesToday, now) : 0;
+
+        // Safety: if supposedly dark but <0.2 hrs remaining, double-check with a
+        // direct time comparison against sunset/twilight
+        if (darkNow && hoursLeft < 0.2) {
+            var sunset = sunTimesToday.astroTwilightStart || sunTimesToday.sunset;
+            var sunrise = sunTimesToday.astroTwilightEnd || sunTimesToday.sunrise;
+            // If current time is between sunrise and sunset, it's actually daytime
+            if (sunrise && sunset && now.getTime() > sunrise.getTime() && now.getTime() < sunset.getTime()) {
+                darkNow = false;
+            }
+        }
 
         if (darkNow) {
-            var hoursLeft = getHoursOfDarknessRemaining(sunTimesToday, now);
             var endTime = sunTimesToday.astroTwilightEnd || sunTimesToday.sunrise;
             var endStr = formatTime(endTime);
             container.innerHTML = '<div class="darkness-info">'
@@ -1216,42 +1228,87 @@
             }
         }
 
-        // Check if user is in/near Iceland (lat 63-67, lng -13 to -25)
-        var inIceland = appState.userLat >= 62.5 && appState.userLat <= 67.5
-            && appState.userLng >= -25.5 && appState.userLng <= -12.5;
-        var locationWarning = document.getElementById('location-warning');
-        if (!inIceland) {
-            locationWarning.innerHTML = '<div class="location-warning-box">'
-                + 'You appear to be outside Iceland. This app\'s spot-finding, light pollution model, '
-                + 'and drive time estimates are designed for Iceland. '
-                + 'Use the <strong>Enter address</strong> tab to set your Iceland location for trip planning.'
-                + '</div>';
-        } else {
-            locationWarning.innerHTML = '';
-        }
-
         showLoading('Checking aurora activity...');
 
         // Step 2: Fetch aurora data
+        var now = new Date();
         var aurora = await fetchAuroraData();
         appState.kpCurrent = aurora.current;
         appState.kpForecast = aurora.forecast;
 
         renderAuroraStatus(appState.kpCurrent, appState.kpForecast);
 
-        // Step 3: Generate candidate dark-sky points (12 directions x 6 distances)
-        var now = new Date();
+        // Step 3: Check if aurora is even possible at this latitude
+        var minKpNeeded = getMinKpForLatitude(appState.userLat);
+        var inIceland = appState.userLat >= 62.5 && appState.userLat <= 67.5
+            && appState.userLng >= -25.5 && appState.userLng <= -12.5;
+        var locationWarning = document.getElementById('location-warning');
+
+        // Find the max Kp in the next 48 hours from forecast
+        var maxForecastKp = appState.kpCurrent || 0;
+        if (appState.kpForecast && appState.kpForecast.length > 0) {
+            for (var fi = 0; fi < appState.kpForecast.length; fi++) {
+                if (appState.kpForecast[fi].kp > maxForecastKp) {
+                    maxForecastKp = appState.kpForecast[fi].kp;
+                }
+            }
+        }
+
+        var auroraNotPossible = maxForecastKp < minKpNeeded;
+
+        if (!inIceland) {
+            // Outside Iceland: spot-finding won't work (light pollution model is Iceland-only)
+            var warningMsg;
+            if (auroraNotPossible) {
+                warningMsg = 'You\'re at latitude ' + Math.abs(appState.userLat).toFixed(1) + '° — aurora requires '
+                    + 'Kp ' + minKpNeeded + '+ here, but the forecast only shows up to Kp ' + maxForecastKp.toFixed(1)
+                    + ' in the next 48 hours. No aurora is expected at your location.';
+            } else {
+                warningMsg = 'You appear to be outside Iceland. This app\'s dark-sky finder is designed for Iceland. '
+                    + 'Use <strong>Enter address</strong> to set your Iceland location for trip planning.';
+            }
+            locationWarning.innerHTML = '<div class="location-warning-box">' + warningMsg + '</div>';
+
+            // Clear results — don't show Iceland-specific data for non-Iceland locations
+            document.getElementById('darkness-info').innerHTML = '';
+            document.getElementById('forecast-windows').innerHTML = '';
+            document.getElementById('nearby-container').innerHTML = '';
+            document.getElementById('last-updated').innerHTML =
+                '<div class="last-updated">Updated at ' + formatTime(now) + '</div>';
+            refreshBtn.classList.remove('spinning');
+            return;
+        }
+
+        if (auroraNotPossible) {
+            // In Iceland but Kp too low even for here
+            locationWarning.innerHTML = '<div class="location-warning-box">'
+                + 'Aurora activity is very low right now (current Kp ' + (appState.kpCurrent || 0).toFixed(1)
+                + ', forecast max Kp ' + maxForecastKp.toFixed(1) + '). '
+                + 'Kp ' + minKpNeeded + '+ is needed at this latitude. Check back when solar activity increases.'
+                + '</div>';
+            document.getElementById('darkness-info').innerHTML = '';
+            document.getElementById('forecast-windows').innerHTML = '';
+            document.getElementById('nearby-container').innerHTML = '';
+            document.getElementById('last-updated').innerHTML =
+                '<div class="last-updated">Updated at ' + formatTime(now) + '</div>';
+            refreshBtn.classList.remove('spinning');
+            return;
+        }
+
+        locationWarning.innerHTML = '';
+
+        // Step 4: Generate candidate dark-sky points (12 directions x 6 distances)
         showLoading('Scanning for dark, flat locations...');
         var candidates = generateNearbyCandidates(appState.userLat, appState.userLng);
 
-        // Step 4: Fetch terrain elevation data for all candidates
+        // Step 5: Fetch terrain elevation data for all candidates
         showLoading('Checking terrain at ' + candidates.length + ' locations...');
         await enrichWithTerrain(candidates);
 
-        // Step 5: Filter to dark, flat spots
+        // Step 6: Filter to dark, flat spots
         var nearbySpots = filterAndRankCandidates(candidates);
 
-        // Step 6: Fetch cloud cover for filtered spots only
+        // Step 7: Fetch cloud cover for filtered spots only
         showLoading('Checking cloud cover at ' + nearbySpots.length + ' locations...');
         var cloudResults = await fetchCloudCoverForSpots(nearbySpots);
         var cloudMap = {};
@@ -1259,7 +1316,7 @@
             cloudMap[r.spot.name] = r.cloudData;
         });
 
-        // Step 7: Calculate sun times and darkness info
+        // Step 8: Calculate sun times and darkness info
         var sunTimesToday = calcSunTimes(appState.userLat, appState.userLng, now);
 
         var tomorrow = new Date(now);
@@ -1268,7 +1325,7 @@
 
         renderDarknessInfo(sunTimesToday, sunTimesTomorrow, now);
 
-        // Step 8: Enrich spots with viewing condition scores
+        // Step 9: Enrich spots with viewing condition scores
         function enrichSpot(spot) {
             var arrivalTime = new Date(now.getTime() + spot.driveMinutes * 60000);
             var cloudData = cloudMap[spot.name] || null;
@@ -1293,11 +1350,11 @@
 
         var enrichedNearby = nearbySpots.map(enrichSpot);
 
-        // Step 9: Find best 48-hour forecast windows
+        // Step 10: Find best 48-hour forecast windows
         var bestWindows = findBestWindows(nearbySpots, cloudMap, appState.kpForecast, appState.userLat, appState.userLng);
         renderForecastWindows(bestWindows);
 
-        // Step 10: Render results
+        // Step 11: Render results
         renderNearbySpots(enrichedNearby);
 
         appState.lastUpdated = now;
