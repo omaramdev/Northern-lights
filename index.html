@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0b0b1e">
-    <title>Northern Lights Finder - Iceland</title>
+    <title>Finding Aurora - Iceland</title>
     <style>
         *, *::before, *::after {
             margin: 0;
@@ -201,6 +201,28 @@
             margin-bottom: 16px;
         }
 
+        .aurora-viability {
+            border: 1px solid;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+        }
+
+        .aurora-viability-label {
+            font-size: 20px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .aurora-viability-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            padding-left: 28px;
+        }
+
         .aurora-status-row {
             display: flex;
             justify-content: space-between;
@@ -208,7 +230,7 @@
         }
 
         .aurora-kp {
-            font-size: 32px;
+            font-size: 26px;
             font-weight: 800;
         }
 
@@ -927,7 +949,7 @@
 <body>
     <div class="app">
         <header class="header">
-            <h1>Northern Lights <span>Finder</span></h1>
+            <h1>Finding <span>Aurora</span></h1>
             <p>Find the best aurora viewing near you in Iceland</p>
             <button class="glossary-btn" id="glossary-btn" aria-label="Glossary of terms">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

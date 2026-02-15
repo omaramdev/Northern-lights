@@ -799,12 +799,10 @@
         }
 
         var info = getKpInfo(kpCurrent);
-        var dotColor = info.color;
 
         // Build forecast mini-bars (next 12 hours in 3-hour blocks)
         var now = new Date();
         var forecastBarsHtml = '';
-        var forecastTimesHtml = '';
         var forecastItems = getUpcomingForecast(forecast, now, 8);
 
         for (var i = 0; i < forecastItems.length; i++) {
@@ -818,24 +816,40 @@
                 + '</div>';
         }
 
+        // Viability is the main visual cue
         var minKp = appState.userLat !== null ? getMinKpForLatitude(appState.userLat) : 2;
-        var visibleAtLocation = kpCurrent >= minKp;
-        var visibleText;
-        if (visibleAtLocation) {
-            visibleText = '<span style="color:' + info.color + '">Visible to naked eye at your latitude</span>';
+        var visibleNow = kpCurrent >= minKp;
+        var viabilityColor, viabilityBg, viabilityLabel, viabilityDesc;
+
+        if (visibleNow) {
+            viabilityColor = 'var(--accent)';
+            viabilityBg = 'rgba(0, 232, 123, 0.12)';
+            viabilityLabel = 'Aurora Visible';
+            viabilityDesc = 'Kp ' + kpCurrent.toFixed(1) + ' meets the Kp ' + minKp + '+ needed at your latitude';
+        } else if (kpCurrent >= minKp - 1) {
+            viabilityColor = 'var(--warning)';
+            viabilityBg = 'rgba(255, 170, 0, 0.12)';
+            viabilityLabel = 'Aurora Possible';
+            viabilityDesc = 'Kp ' + kpCurrent.toFixed(1) + ' is close to the Kp ' + minKp + '+ needed — could improve';
         } else {
-            visibleText = '<span style="color:var(--text-secondary)">Need Kp ' + minKp + '+ to see aurora at your latitude</span>';
+            viabilityColor = 'var(--danger)';
+            viabilityBg = 'rgba(255, 68, 102, 0.12)';
+            viabilityLabel = 'Not Visible';
+            viabilityDesc = 'Kp ' + kpCurrent.toFixed(1) + ' — need Kp ' + minKp + '+ at your latitude';
         }
 
         container.innerHTML = '<div class="aurora-status">'
+            + '<div class="aurora-viability" style="background:' + viabilityBg + ';border-color:' + viabilityColor + '">'
+            + '  <div class="aurora-viability-label" style="color:' + viabilityColor + '">'
+            + '    <span class="aurora-dot" style="background:' + viabilityColor + '"></span>'
+            + viabilityLabel
+            + '  </div>'
+            + '  <div class="aurora-viability-desc">' + viabilityDesc + '</div>'
+            + '</div>'
             + '<div class="aurora-status-row">'
             + '  <div>'
             + '    <div class="aurora-kp" style="color:' + info.color + '">Kp ' + kpCurrent.toFixed(1) + '</div>'
-            + '    <div class="aurora-label">Current geomagnetic activity</div>'
-            + '  </div>'
-            + '  <div class="aurora-activity">'
-            + '    <div class="aurora-activity-level"><span class="aurora-dot" style="background:' + dotColor + '"></span>' + info.label + '</div>'
-            + '    <div class="aurora-activity-desc">' + visibleText + '</div>'
+            + '    <div class="aurora-label">Current activity &middot; ' + info.label + '</div>'
             + '  </div>'
             + '</div>'
             + '<div class="kp-forecast-row">'
@@ -1269,7 +1283,8 @@
             }
             locationWarning.innerHTML = '<div class="location-warning-box">' + warningMsg + '</div>';
 
-            // Clear results — don't show Iceland-specific data for non-Iceland locations
+            // Hide controls and results — don't show Iceland-specific data
+            document.querySelector('.controls').style.display = 'none';
             document.getElementById('darkness-info').innerHTML = '';
             document.getElementById('forecast-windows').innerHTML = '';
             document.getElementById('nearby-container').innerHTML = '';
@@ -1296,6 +1311,7 @@
         }
 
         locationWarning.innerHTML = '';
+        document.querySelector('.controls').style.display = '';
 
         // Step 4: Generate candidate dark-sky points (12 directions x 6 distances)
         showLoading('Scanning for dark, flat locations...');
