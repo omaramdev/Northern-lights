@@ -54,15 +54,28 @@
     // ---- Kp index interpretation for Iceland's latitude (63-66 N) ----
     // At these latitudes, aurora is visible at lower Kp values
     const KP_INFO = [
-        { min: 0, max: 1, label: 'Quiet', color: '#ff4466', eyeVisible: false },
-        { min: 1, max: 2, label: 'Low', color: '#ff6644', eyeVisible: false },
-        { min: 2, max: 3, label: 'Moderate', color: '#ffaa00', eyeVisible: true },
-        { min: 3, max: 4, label: 'Active', color: '#aadd00', eyeVisible: true },
-        { min: 4, max: 5, label: 'Strong', color: '#00e87b', eyeVisible: true },
-        { min: 5, max: 6, label: 'Strong+', color: '#00e87b', eyeVisible: true },
-        { min: 6, max: 7, label: 'Very Strong', color: '#00ccff', eyeVisible: true },
-        { min: 7, max: 9, label: 'Intense', color: '#aa66ff', eyeVisible: true }
+        { min: 0, max: 1, label: 'Quiet', color: '#ff4466' },
+        { min: 1, max: 2, label: 'Low', color: '#ff6644' },
+        { min: 2, max: 3, label: 'Moderate', color: '#ffaa00' },
+        { min: 3, max: 4, label: 'Active', color: '#aadd00' },
+        { min: 4, max: 5, label: 'Strong', color: '#00e87b' },
+        { min: 5, max: 6, label: 'Strong+', color: '#00e87b' },
+        { min: 6, max: 7, label: 'Very Strong', color: '#00ccff' },
+        { min: 7, max: 9, label: 'Intense', color: '#aa66ff' }
     ];
+
+    // Minimum Kp needed to see aurora at a given magnetic latitude
+    // Rough thresholds based on NOAA auroral oval models
+    function getMinKpForLatitude(lat) {
+        var absLat = Math.abs(lat);
+        if (absLat >= 66) return 1;  // Arctic circle — almost always in the oval
+        if (absLat >= 64) return 2;  // Iceland
+        if (absLat >= 60) return 3;  // Southern Norway, Scotland
+        if (absLat >= 55) return 5;  // Northern England, Denmark
+        if (absLat >= 50) return 7;  // Central Europe
+        if (absLat >= 45) return 8;  // Southern France, Northern Italy
+        return 9; // Very unlikely below 45°
+    }
 
     // Iceland average driving speed accounting for winding roads and conditions
     const AVG_SPEED_KMH = 65;
@@ -805,9 +818,14 @@
                 + '</div>';
         }
 
-        var visibleText = info.eyeVisible
-            ? '<span style="color:' + info.color + '">Visible to naked eye at this latitude</span>'
-            : '<span style="color:var(--text-secondary)">Likely too faint for naked eye</span>';
+        var minKp = appState.userLat !== null ? getMinKpForLatitude(appState.userLat) : 2;
+        var visibleAtLocation = kpCurrent >= minKp;
+        var visibleText;
+        if (visibleAtLocation) {
+            visibleText = '<span style="color:' + info.color + '">Visible to naked eye at your latitude</span>';
+        } else {
+            visibleText = '<span style="color:var(--text-secondary)">Need Kp ' + minKp + '+ to see aurora at your latitude</span>';
+        }
 
         container.innerHTML = '<div class="aurora-status">'
             + '<div class="aurora-status-row">'
@@ -1196,6 +1214,20 @@
                 showError(msg, false);
                 return;
             }
+        }
+
+        // Check if user is in/near Iceland (lat 63-67, lng -13 to -25)
+        var inIceland = appState.userLat >= 62.5 && appState.userLat <= 67.5
+            && appState.userLng >= -25.5 && appState.userLng <= -12.5;
+        var locationWarning = document.getElementById('location-warning');
+        if (!inIceland) {
+            locationWarning.innerHTML = '<div class="location-warning-box">'
+                + 'You appear to be outside Iceland. This app\'s spot-finding, light pollution model, '
+                + 'and drive time estimates are designed for Iceland. '
+                + 'Use the <strong>Enter address</strong> tab to set your Iceland location for trip planning.'
+                + '</div>';
+        } else {
+            locationWarning.innerHTML = '';
         }
 
         showLoading('Checking aurora activity...');
